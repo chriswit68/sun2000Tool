@@ -31,6 +31,11 @@ Register und untersucht kein Netzwerk ohne explizite CIDR-Angabe.
 
 ## Polling
 
+Die Polling-Architektur trennt Modbus-Zugriff (`ModbusClient`), die beiden
+Ausgabekanäle (`CsvWriter`, `ConsoleReporter`) und die Zusammenstellung der
+Messwerte (`Sun2000Poller`). Dadurch koennen Ausgabe und Geraetekommunikation
+unabhaengig erweitert und getestet werden.
+
 ```bash
 ./build/sun2000Tool poll --host 192.168.1.50 --port 502 --unit-id 1 \
 	--interval-seconds 10 --log-file sun2000.csv

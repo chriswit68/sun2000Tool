@@ -76,6 +76,61 @@ bool is_modbus_exception(int error_code) {
            error_code <= MODBUS_ENOBASE + MODBUS_EXCEPTION_MAX;
 }
 
+class ModbusProbe {
+public:
+    ModbusProbe(const std::string& host, int port, int socket_fd,
+                unsigned int timeout_ms) {
+        context_ = modbus_new_tcp(host.c_str(), port);
+        if (context_ == nullptr) {
+            ::close(socket_fd);
+            return;
+        }
+
+        modbus_set_socket(context_, socket_fd);
+        const auto timeout_seconds = timeout_ms / 1000;
+        const auto timeout_microseconds = (timeout_ms % 1000) * 1000;
+        configured_ =
+            modbus_set_response_timeout(context_, timeout_seconds,
+                                        timeout_microseconds) == 0;
+    }
+
+    ~ModbusProbe() {
+        if (context_ != nullptr) {
+            modbus_close(context_);
+            modbus_free(context_);
+        }
+    }
+
+    ModbusProbe(const ModbusProbe&) = delete;
+    ModbusProbe& operator=(const ModbusProbe&) = delete;
+
+    std::vector<int> responding_unit_ids(const std::vector<int>& unit_ids) {
+        std::vector<int> responding;
+        if (context_ == nullptr || !configured_) {
+            return responding;
+        }
+
+        for (const int unit_id : unit_ids) {
+            if (modbus_set_slave(context_, unit_id) != 0) {
+                continue;
+            }
+
+            std::uint16_t value = 0;
+            const int read_result =
+                modbus_read_registers(context_, 0, 1, &value);
+            const int read_error = errno;
+            if (read_result == 1 || is_modbus_exception(read_error)) {
+                responding.push_back(unit_id);
+            }
+        }
+        return responding;
+    }
+
+private:
+    modbus_t* context_{};
+    bool configured_{};
+};
+
 ScanResult scan_endpoint(const std::string& host, int port,
                          const ScanOptions& options) {
     ScanResult result;
@@ -88,35 +143,9 @@ ScanResult scan_endpoint(const std::string& host, int port,
     }
     result.port_open = true;
 
-    modbus_t* context = modbus_new_tcp(host.c_str(), port);
-    if (context == nullptr) {
-        ::close(socket_fd);
-        return result;
-    }
-
-    modbus_set_socket(context, socket_fd);
-    const auto timeout_seconds = options.timeout_ms / 1000;
-    const auto timeout_microseconds = (options.timeout_ms % 1000) * 1000;
-    const bool configured =
-        modbus_set_response_timeout(context, timeout_seconds,
-                                    timeout_microseconds) == 0;
-
-    for (const int unit_id : options.unit_ids) {
-        if (!configured || modbus_set_slave(context, unit_id) != 0) {
-            continue;
-        }
-
-        std::uint16_t value = 0;
-        const int read_result = modbus_read_registers(context, 0, 1, &value);
-        const int read_error = errno;
-        if (read_result == 1 || is_modbus_exception(read_error)) {
-            result.modbus_confirmed = true;
-            result.responding_unit_ids.push_back(unit_id);
-        }
-    }
-
-    modbus_close(context);
-    modbus_free(context);
+    ModbusProbe probe(host, port, socket_fd, options.timeout_ms);
+    result.responding_unit_ids = probe.responding_unit_ids(options.unit_ids);
+    result.modbus_confirmed = !result.responding_unit_ids.empty();
     return result;
 }
 
