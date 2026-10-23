@@ -36,7 +36,7 @@ void print_usage(std::ostream& output) {
     output << "Verwendung:\n"
            << "  sun2000Tool poll --host HOST --interval-seconds N [--port PORT] "
               "[--unit-id ID] [--csv [--log-file DATEI]] [--once] "
-              "[--console-output summary|all]\n"
+              "[--console-output summary|all (Standard: summary)]\n"
            << "  sun2000Tool scan --cidr IPV4/PRAEFIX [--port PORT] [--workers N] "
               "[--timeout-ms N] [--max-hosts N]\n"
            << "  sun2000Tool --help\n";
