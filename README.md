@@ -54,6 +54,9 @@ Register und untersucht kein Netzwerk ohne explizite CIDR-Angabe.
 
 ## Polling
 
+Eine laienverstaendliche Erklaerung der CSV-Messwerte und Registergruppen steht
+in [docs/solar-registerwerte-einfach-erklaert.md](docs/solar-registerwerte-einfach-erklaert.md).
+
 Die Polling-Architektur trennt Modbus-Zugriff (`ModbusClient`), die beiden
 Ausgabekanäle (`CsvWriter`, `ConsoleReporter`), die Zusammenstellung der
 Messwerte (`Sun2000Poller`) und die benannten Registeradressen in
