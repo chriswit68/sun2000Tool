@@ -32,9 +32,10 @@ Register und untersucht kein Netzwerk ohne explizite CIDR-Angabe.
 ## Polling
 
 Die Polling-Architektur trennt Modbus-Zugriff (`ModbusClient`), die beiden
-Ausgabekanäle (`CsvWriter`, `ConsoleReporter`) und die Zusammenstellung der
-Messwerte (`Sun2000Poller`). Dadurch koennen Ausgabe und Geraetekommunikation
-unabhaengig erweitert und getestet werden.
+Ausgabekanäle (`CsvWriter`, `ConsoleReporter`), die Zusammenstellung der
+Messwerte (`Sun2000Poller`) und die benannten Registeradressen in
+`register_map.hpp`. Dadurch koennen Ausgabe und Geraetekommunikation unabhaengig
+erweitert und getestet werden.
 
 ```bash
 ./build/sun2000Tool poll --host 192.168.1.50 --port 502 --unit-id 1 \
@@ -50,6 +51,9 @@ Die Datei wird im CSV-Format fortlaufend erweitert; Zeitstempel sind UTC.
 `--once` liest einmal. `Ctrl-C` beendet den Dauerbetrieb.
 Die Identifikationsdaten enthalten auch die numerische Modell-ID aus Register
 30070 (CSV-Signal `model_id`).
+Wenn der blockweise Modellzugriff auf Register 30000–30014 fehlschlaegt, versucht
+der Poller diese Register einzeln zu lesen. Ein erfolgreicher Einzelzugriff wird
+zum Vergleich unter `model_name_individual` ausgegeben.
 Die CSV-Datei enthaelt ausschliesslich CSV-Datensaetze. Auf der Konsole werden
 die Messwerte separat und nach Identifikation, PV-Eingaengen, Wechselrichter/
 Netz und Batterie gruppiert ausgegeben; Fehler erscheinen auf `stderr`.

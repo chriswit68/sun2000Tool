@@ -1,6 +1,7 @@
 #include "modbus_client.hpp"
 
 #include <cerrno>
+#include <sstream>
 #include <stdexcept>
 #include <vector>
 
@@ -61,6 +62,35 @@ std::string ModbusClient::read_string(int address, int register_count) const {
     for (const auto word : registers) {
         value.push_back(static_cast<char>(word >> 8));
         value.push_back(static_cast<char>(word & 0xFF));
+    }
+    while (!value.empty() && (value.back() == '\0' || value.back() == ' ')) {
+        value.pop_back();
+    }
+    return value;
+}
+
+std::string ModbusClient::read_string_register_by_register(
+    int address, int register_count) const {
+    std::string value;
+    std::ostringstream errors;
+    value.reserve(static_cast<std::size_t>(register_count) * 2);
+    bool failed = false;
+    for (int offset = 0; offset < register_count; ++offset) {
+        try {
+            const auto registers = read_holding_registers(address + offset, 1);
+            value.push_back(static_cast<char>(registers[0] >> 8));
+            value.push_back(static_cast<char>(registers[0] & 0xFF));
+        } catch (const std::exception& error) {
+            if (failed) {
+                errors << "; ";
+            }
+            errors << error.what();
+            failed = true;
+        }
+    }
+    if (failed) {
+        throw std::runtime_error("Einzelzugriff unvollstaendig: " +
+                                 errors.str());
     }
     while (!value.empty() && (value.back() == '\0' || value.back() == ' ')) {
         value.pop_back();

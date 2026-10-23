@@ -20,6 +20,8 @@ public:
     std::vector<std::uint16_t> read_holding_registers(int address,
                                                       int count) const;
     std::string read_string(int address, int register_count) const;
+    std::string read_string_register_by_register(
+        int address, int register_count) const;
 
 private:
     modbus_t* context_{};

@@ -1,6 +1,7 @@
 #include "sun2000_poller.hpp"
 
 #include "modbus_client.hpp"
+#include "register_map.hpp"
 
 #include <algorithm>
 #include <array>
@@ -144,15 +145,45 @@ bool Sun2000Poller::poll_once() {
         console_.begin_poll(timestamp);
 
         console_.section("Identifikation");
-        read_and_report_string(client, 30000, 15, "model_name", "Modell",
-                               timestamp, csv_, console_);
-        read_and_report_string(client, 30015, 10, "serial_number",
-                               "Seriennummer", timestamp, csv_, console_);
-        read_and_report_string(client, 30035, 15, "firmware_version",
-                               "Firmware", timestamp, csv_, console_);
+        try {
+            const std::string model =
+                client.read_string(registers::inverter_model_name,
+                                   registers::inverter_model_name_register_count);
+            if (!model.empty()) {
+                report_value(timestamp, "model_name", "Modell", model, "", csv_,
+                             console_);
+            }
+        } catch (const std::exception& error) {
+            std::cerr << "Modell (Blockzugriff): " << error.what() << '\n';
+            try {
+                const std::string model =
+                    client.read_string_register_by_register(
+                        registers::inverter_model_name,
+                        registers::inverter_model_name_register_count);
+                if (!model.empty()) {
+                    report_value(timestamp, "model_name_individual",
+                                 "Modell (Einzelregister)", model, "", csv_,
+                                 console_);
+                } else {
+                    std::cerr << "Modell (Einzelregister): leere Antwort\n";
+                }
+            } catch (const std::exception& individual_error) {
+                std::cerr << "Modell (Einzelregister): "
+                          << individual_error.what() << '\n';
+            }
+        }
+        read_and_report_string(
+            client, registers::inverter_serial_number,
+            registers::inverter_serial_number_register_count, "serial_number",
+            "Seriennummer", timestamp, csv_, console_);
+        read_and_report_string(
+            client, registers::inverter_firmware_version,
+            registers::inverter_firmware_version_register_count,
+            "firmware_version", "Firmware", timestamp, csv_, console_);
 
         try {
-            const auto model_id = client.read_holding_registers(30070, 1)[0];
+            const auto model_id =
+                client.read_holding_registers(registers::inverter_model_id, 1)[0];
             const std::string value = std::to_string(model_id);
             report_value(timestamp, "model_id", "Modell-ID", value, "", csv_,
                          console_);
@@ -163,11 +194,15 @@ bool Sun2000Poller::poll_once() {
         console_.section("PV-Eingaenge");
         try {
             const auto pv_string_count =
-                client.read_holding_registers(30071, 1)[0];
+                client.read_holding_registers(registers::inverter_pv_string_count,
+                                              1)[0];
             const auto bounded_count =
                 std::min<std::uint16_t>(pv_string_count, 24);
             for (std::uint16_t index = 0; index < bounded_count; ++index) {
-                const int address = 32016 + static_cast<int>(index) * 2;
+                const int address =
+                    registers::pv_string_1_voltage +
+                    static_cast<int>(index) *
+                        registers::pv_string_register_stride;
                 const std::string suffix = std::to_string(index + 1);
                 read_and_report_metric(
                     client,
@@ -185,33 +220,57 @@ bool Sun2000Poller::poll_once() {
         }
 
         static const std::array<Metric, 23> inverter_metrics{{
-            {"input_power", "W", 32064, RegisterFormat::signed32, 1},
-            {"line_voltage_a_b", "V", 32066, RegisterFormat::unsigned16, 10},
-            {"line_voltage_b_c", "V", 32067, RegisterFormat::unsigned16, 10},
-            {"line_voltage_c_a", "V", 32068, RegisterFormat::unsigned16, 10},
-            {"phase_voltage_a", "V", 32069, RegisterFormat::unsigned16, 10},
-            {"phase_voltage_b", "V", 32070, RegisterFormat::unsigned16, 10},
-            {"phase_voltage_c", "V", 32071, RegisterFormat::unsigned16, 10},
-            {"phase_current_a", "A", 32072, RegisterFormat::signed32, 1000},
-            {"phase_current_b", "A", 32074, RegisterFormat::signed32, 1000},
-            {"phase_current_c", "A", 32076, RegisterFormat::signed32, 1000},
-            {"active_power", "W", 32080, RegisterFormat::signed32, 1},
-            {"reactive_power", "var", 32082, RegisterFormat::signed32, 1},
-            {"power_factor", "", 32084, RegisterFormat::signed16, 1000},
-            {"grid_frequency", "Hz", 32085, RegisterFormat::unsigned16, 100},
-            {"efficiency", "%", 32086, RegisterFormat::unsigned16, 100},
-            {"internal_temperature", "C", 32087, RegisterFormat::signed16, 10},
-            {"insulation_resistance", "MOhm", 32088,
+            {"input_power", "W", registers::inverter_input_power,
+             RegisterFormat::signed32, 1},
+            {"line_voltage_a_b", "V", registers::inverter_line_voltage_ab,
+             RegisterFormat::unsigned16, 10},
+            {"line_voltage_b_c", "V", registers::inverter_line_voltage_bc,
+             RegisterFormat::unsigned16, 10},
+            {"line_voltage_c_a", "V", registers::inverter_line_voltage_ca,
+             RegisterFormat::unsigned16, 10},
+            {"phase_voltage_a", "V", registers::inverter_phase_voltage_a,
+             RegisterFormat::unsigned16, 10},
+            {"phase_voltage_b", "V", registers::inverter_phase_voltage_b,
+             RegisterFormat::unsigned16, 10},
+            {"phase_voltage_c", "V", registers::inverter_phase_voltage_c,
+             RegisterFormat::unsigned16, 10},
+            {"phase_current_a", "A", registers::inverter_phase_current_a,
+             RegisterFormat::signed32, 1000},
+            {"phase_current_b", "A", registers::inverter_phase_current_b,
+             RegisterFormat::signed32, 1000},
+            {"phase_current_c", "A", registers::inverter_phase_current_c,
+             RegisterFormat::signed32, 1000},
+            {"active_power", "W", registers::inverter_active_power,
+             RegisterFormat::signed32, 1},
+            {"reactive_power", "var", registers::inverter_reactive_power,
+             RegisterFormat::signed32, 1},
+            {"power_factor", "", registers::inverter_power_factor,
+             RegisterFormat::signed16, 1000},
+            {"grid_frequency", "Hz", registers::inverter_grid_frequency,
+             RegisterFormat::unsigned16, 100},
+            {"efficiency", "%", registers::inverter_efficiency,
+             RegisterFormat::unsigned16, 100},
+            {"internal_temperature", "C",
+             registers::inverter_internal_temperature,
+             RegisterFormat::signed16, 10},
+            {"insulation_resistance", "MOhm",
+             registers::inverter_insulation_resistance,
              RegisterFormat::unsigned16, 1000},
-            {"device_status", "code", 32089, RegisterFormat::unsigned16, 1},
-            {"fault_code", "code", 32090, RegisterFormat::unsigned16, 1},
-            {"active_power_fast", "W", 32095, RegisterFormat::signed32, 1},
-            {"accumulated_yield_energy", "kWh", 32106,
+            {"device_status", "code", registers::inverter_device_status,
+             RegisterFormat::unsigned16, 1},
+            {"fault_code", "code", registers::inverter_fault_code,
+             RegisterFormat::unsigned16, 1},
+            {"active_power_fast", "W", registers::inverter_active_power_fast,
+             RegisterFormat::signed32, 1},
+            {"accumulated_yield_energy", "kWh",
+             registers::inverter_accumulated_yield_energy,
              RegisterFormat::unsigned32, 100},
-            {"daily_yield_energy", "kWh", 32114, RegisterFormat::unsigned32,
-             100},
-            {"monthly_yield_energy", "kWh", 32116, RegisterFormat::unsigned32,
-             100},
+            {"daily_yield_energy", "kWh",
+             registers::inverter_daily_yield_energy,
+             RegisterFormat::unsigned32, 100},
+            {"monthly_yield_energy", "kWh",
+             registers::inverter_monthly_yield_energy,
+             RegisterFormat::unsigned32, 100},
         }};
         console_.section("Wechselrichter und Netz");
         for (const auto& metric : inverter_metrics) {
@@ -219,20 +278,27 @@ bool Sun2000Poller::poll_once() {
         }
 
         static const std::array<Metric, 9> battery_metrics{{
-            {"battery_unit_1_status", "code", 37000,
+            {"battery_unit_1_status", "code", registers::battery_unit_1_status,
              RegisterFormat::unsigned16, 1},
-            {"battery_unit_1_power", "W", 37001, RegisterFormat::signed32, 1},
-            {"battery_unit_1_bus_voltage", "V", 37003,
+            {"battery_unit_1_power", "W", registers::battery_unit_1_power,
+             RegisterFormat::signed32, 1},
+            {"battery_unit_1_bus_voltage", "V",
+             registers::battery_unit_1_bus_voltage,
              RegisterFormat::unsigned16, 10},
-            {"battery_unit_1_soc", "%", 37004, RegisterFormat::unsigned16, 10},
-            {"battery_unit_1_working_mode", "code", 37006,
+            {"battery_unit_1_soc", "%", registers::battery_unit_1_soc,
+             RegisterFormat::unsigned16, 10},
+            {"battery_unit_1_working_mode", "code",
+             registers::battery_unit_1_working_mode,
              RegisterFormat::unsigned16, 1},
-            {"battery_unit_1_temperature", "C", 37022,
+            {"battery_unit_1_temperature", "C",
+             registers::battery_unit_1_temperature,
              RegisterFormat::signed16, 10},
-            {"battery_soc", "%", 37760, RegisterFormat::unsigned16, 10},
-            {"battery_power", "W", 37765, RegisterFormat::signed32, 1},
-            {"battery_total_charge", "kWh", 37780, RegisterFormat::unsigned32,
-             100},
+            {"battery_soc", "%", registers::battery_soc,
+             RegisterFormat::unsigned16, 10},
+            {"battery_power", "W", registers::battery_power,
+             RegisterFormat::signed32, 1},
+            {"battery_total_charge", "kWh", registers::battery_total_charge,
+             RegisterFormat::unsigned32, 100},
         }};
         console_.section("Batterie");
         for (const auto& metric : battery_metrics) {
