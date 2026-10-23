@@ -16,6 +16,29 @@ cmake --build build
 ./build/sun2000Tool --help
 ```
 
+### Native macOS-Menueleisten-App
+
+`sun2000Menu` ist eine eigenstaendige SwiftUI-/AppKit-App fuer macOS 15 und
+neuer. Sie startet `sun2000Tool` regelmaessig mit `--once --csv` und verwaltet
+ihre aktuelle CSV unter `~/Library/Application Support/sun2000Menu/`.
+
+```bash
+cd sun2000Menu
+swift test
+./build-app.sh
+open ../build/sun2000Menu.app
+```
+
+Beim ersten Start die ausfuehrbare `sun2000Tool`-Datei, Host/IP-Adresse,
+Modbus-Port und Unit-ID in den Einstellungen angeben. Standardmaessig ist das
+Intervall 10 Sekunden. Die Auswahl fuer die direkte Menueleistenanzeige wird
+nach der ersten erfolgreichen Abfrage aus den verfuegbaren CSV-Signalen
+angeboten. Linksklick zeigt alle uebrigen Werte; Rechtsklick oeffnet die
+Einstellungen. Die App wird als Menu-bar-only-App ohne Dock-Symbol gestartet.
+Bei einem erfolgreichen Prozesslauf ohne CSV-Messwerte zeigt der Status auch
+die ersten Registerdiagnosen von `sun2000Tool` an; pruefe dann insbesondere
+Host, Port und Unit-ID.
+
 ## Modbus-Endpunkt finden
 
 Modbus TCP muss in der Wechselrichter-/Dongle-Konfiguration freigeschaltet sein.

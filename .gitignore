@@ -1,3 +1,7 @@
 build/
+.build/
+.swiftpm/
+sun2000Menu/.build/
+sun2000Menu/.swiftpm/
 data/*.csv
 *.csv
