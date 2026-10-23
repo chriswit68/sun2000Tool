@@ -7,7 +7,6 @@
 #include <cstdint>
 #include <cstdlib>
 #include <ctime>
-#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -62,12 +61,17 @@ bool read_and_log_metric(std::ofstream& log, const std::string& timestamp, modbu
     uint16_t tab_reg[2] = {0, 0};
     int num_regs = (metric.format == RegisterFormat::unsigned32 || metric.format == RegisterFormat::signed32) ? 2 : 1;
 
-    // Register auslesen (Input Registers ab Adresse 30000+ nutzen meist function code 04)
-    // Falls Sie Holding Registers nutzen, modbus_read_registers verwenden.
-    int rc = modbus_read_input_registers(context, metric.address, num_regs, tab_reg);
-    
-    if (rc == -1) {
-        // Lesen fehlgeschlagen (z.B. Timeout oder Modbus Exception / Blockiert)
+    const int rc =
+        modbus_read_registers(context, metric.address, num_regs, tab_reg);
+    if (rc != num_regs) {
+        std::cerr << "Metrik " << metric.name << " (Register "
+                  << metric.address << ") nicht lesbar: ";
+        if (rc == -1) {
+            std::cerr << modbus_strerror(errno);
+        } else {
+            std::cerr << "unerwartete Anzahl gelesener Register (" << rc << ')';
+        }
+        std::cerr << '\n';
         return false;
     }
 
@@ -85,13 +89,14 @@ bool read_and_log_metric(std::ofstream& log, const std::string& timestamp, modbu
         final_value = static_cast<double>(val) / metric.scale;
     } 
     else if (metric.format == RegisterFormat::unsigned32) {
-        uint32_t val = (static_cast<uint32_t>(tab_reg[1]) << 16) + tab_reg[0];
+        uint32_t val = (static_cast<uint32_t>(tab_reg[0]) << 16) | tab_reg[1];
         // Huawei Fehlerwert-Erkennung für 32-bit (0x7FFFFFFF)
         if (val == 0x7FFFFFFF) return false;
         final_value = static_cast<double>(val) / metric.scale;
     } 
     else if (metric.format == RegisterFormat::signed32) {
-        int32_t val = static_cast<int32_t>((static_cast<uint32_t>(tab_reg[1]) << 16) + tab_reg[0]);
+        int32_t val = static_cast<int32_t>(
+            (static_cast<uint32_t>(tab_reg[0]) << 16) | tab_reg[1]);
         if (val == 0x7FFFFFFF || val == -2147483648LL) return false;
         final_value = static_cast<double>(val) / metric.scale;
     }
@@ -247,29 +252,19 @@ void write_row(std::ofstream& log, const std::string& timestamp,
     log << row << '\n';
 }
 
-bool read_registers(modbus_t* context, int address, int count,
-                    std::uint16_t* registers) {
-    usleep(40000); // 40 Millisekunden Pause
-    const int result = modbus_read_registers(context, address, count, registers);
-    
-
-    if (result == count) {
-        return true;
-    }
-    std::cerr << "Register " << address << " nicht lesbar: "
-              << modbus_strerror(errno) << '\n';
-    return false;
-}
-
 std::string read_string(modbus_t* context, int address, int register_count) {
     std::vector<std::uint16_t> registers(static_cast<std::size_t>(register_count));
     
     usleep(40000);
-    int result = modbus_read_registers(context, address, register_count, registers.data());
+    const int result =
+        modbus_read_registers(context, address, register_count, registers.data());
     
-    if (result == -1) {
-        std::cerr << "KRITISCH: Register " << address << " fehlgeschlagen mit Fehler: " 
-                  << modbus_strerror(errno) << " (Errno: " << errno << ")\n";
+    if (result != register_count) {
+        std::cerr << "KRITISCH: Register " << address
+                  << " fehlgeschlagen mit Fehler: "
+                  << (result == -1 ? modbus_strerror(errno)
+                                   : "unerwartete Anzahl gelesener Register")
+                  << " (Ergebnis: " << result << ")\n";
         return {};
     }
 
@@ -284,54 +279,6 @@ std::string read_string(modbus_t* context, int address, int register_count) {
     }
     return value;
 }
-
-std::int32_t signed32(std::uint32_t raw) {
-    std::int32_t value{};
-    static_assert(sizeof(value) == sizeof(raw));
-    std::memcpy(&value, &raw, sizeof(value));
-    return value;
-}
-
- bool read_metric(modbus_t* context, const Metric& metric, double& value) {
-    const int words = (metric.format == RegisterFormat::unsigned32 ||
-                       metric.format == RegisterFormat::signed32)
-                          ? 2
-                          : 1;
-    std::array<std::uint16_t, 2> registers{};
-    if (!read_registers(context, metric.address, words, registers.data())) {
-        return false;
-    }
-
-    switch (metric.format) {
-        case RegisterFormat::unsigned16:
-            value = registers[0];
-            break;
-        case RegisterFormat::signed16:
-            value = static_cast<std::int16_t>(registers[0]);
-            break;
-        case RegisterFormat::unsigned32:
-            value = (static_cast<std::uint32_t>(registers[0]) << 16) |
-                    registers[1];
-            break;
-        case RegisterFormat::signed32:
-            value = signed32((static_cast<std::uint32_t>(registers[0]) << 16) |
-                             registers[1]);
-            break;
-    }
-    value /= metric.scale;
-    return true;
-}
- 
-void write_metric(std::ofstream& log, const std::string& timestamp,
-                  modbus_t* context, const Metric& metric) {
-    double value = 0;
-    if (read_metric(context, metric, value)) {
-        std::ostringstream formatted;
-        formatted << std::setprecision(10) << value;
-        write_row(log, timestamp, metric.name, formatted.str(), metric.unit);
-    }
-}
-
 
 // Erweiterte Poll-Funktion, die die vorherige Funktionalität beibehält, aber die Metriken in einer Schleife liest und protokolliert.
 bool poll_once_ext(const PollOptions& options, std::ofstream& log) {
@@ -364,7 +311,9 @@ bool poll_once_ext(const PollOptions& options, std::ofstream& log) {
     // PV-String Anzahl
     uint16_t pv_string_count = 0;
     uint16_t count_reg = 0;
-    if (modbus_read_registers(context, 30071, 1, &count_reg) != -1) {
+    const int count_result =
+        modbus_read_registers(context, 30071, 1, &count_reg);
+    if (count_result == 1) {
         pv_string_count = count_reg;
         const auto bounded_count = std::min<std::uint16_t>(pv_string_count, 24);
         for (std::uint16_t index = 0; index < bounded_count; ++index) {
@@ -378,6 +327,11 @@ bool poll_once_ext(const PollOptions& options, std::ofstream& log) {
             read_and_log_metric(log, timestamp, context, v_metric);
             read_and_log_metric(log, timestamp, context, c_metric);
         }
+    } else {
+        std::cerr << "PV-String-Anzahl (Register 30071) nicht lesbar: "
+                  << (count_result == -1 ? modbus_strerror(errno)
+                                         : "unerwartete Anzahl gelesener Register")
+                  << '\n';
     }
 
     // Inverter Metriken
