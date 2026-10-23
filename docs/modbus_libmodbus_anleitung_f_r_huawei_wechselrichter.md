@@ -38,7 +38,7 @@ sudo apt-get install libmodbus-dev
 2. **Slave-ID setzen:** `modbus_set_slave(ctx, slave_id)` (oft Slave-ID `1` oder `0` bei Huawei)
 3. **Verbindung herstellen:** `modbus_connect(ctx)`
 4. **Register auslesen:** `modbus_read_registers(ctx, addr, count, dest)`
-5. **Daten verarbeiten:** Kombinieren von zwei 16-Bit-Registern zu 32-Bit-Werten.
+5. **Daten verarbeiten:** Kombinieren von zwei 16-Bit-Registern zu einem 32-Bit-Werten.
 6. **Verbindung schließen:** `modbus_close(ctx)` und `modbus_free(ctx)`
 
 ---

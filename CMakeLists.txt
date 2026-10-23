@@ -13,21 +13,22 @@ if(NOT LIBMODBUS_INCLUDE_DIR OR NOT LIBMODBUS_LIBRARY)
 	message(FATAL_ERROR "libmodbus wurde nicht gefunden. Installiere libmodbus und setze bei Bedarf LIBMODBUS_INCLUDE_DIR und LIBMODBUS_LIBRARY.")
 endif()
 
-add_library(modbus_scanner network_scanner.cpp)
+add_library(modbus_scanner src/network_scanner.cpp)
 target_include_directories(modbus_scanner PUBLIC
-	${CMAKE_CURRENT_SOURCE_DIR}
+	${CMAKE_CURRENT_SOURCE_DIR}/src
 	${LIBMODBUS_INCLUDE_DIR})
 target_link_libraries(modbus_scanner PUBLIC ${LIBMODBUS_LIBRARY})
 target_compile_options(modbus_scanner PRIVATE -Wall -Wextra)
 
-add_executable(${PROJECT_NAME} main.cpp)
+add_executable(${PROJECT_NAME} src/main.cpp)
 target_link_libraries(${PROJECT_NAME} PRIVATE modbus_scanner)
 target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra)
 
 include(CTest)
 if(BUILD_TESTING)
-	add_executable(sun2000Tool-Tests tests.cpp)
+	add_executable(sun2000Tool-Tests tests/tests.cpp)
 	target_link_libraries(sun2000Tool-Tests PRIVATE modbus_scanner)
 	target_compile_options(sun2000Tool-Tests PRIVATE -Wall -Wextra)
 	add_test(NAME sun2000Tool-Tests COMMAND sun2000Tool-Tests)
 endif()
+
