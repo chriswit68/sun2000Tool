@@ -55,6 +55,19 @@ struct Metric {
 
 void write_row(std::ofstream& log, const std::string& ts, const std::string& key, const std::string& val, const std::string& unit);
 
+void print_section(const std::string& title) {
+    std::cout << "\n" << title << '\n';
+}
+
+void print_value(const std::string& name, const std::string& value,
+                 const std::string& unit) {
+    std::cout << "  " << std::left << std::setw(28) << name << value;
+    if (!unit.empty()) {
+        std::cout << ' ' << unit;
+    }
+    std::cout << '\n';
+}
+
 
 // Sichere Funktion zum Lesen und Validieren eines Metrik-Werts
 bool read_and_log_metric(std::ofstream& log, const std::string& timestamp, modbus_t* context, const Metric& metric) {
@@ -101,8 +114,9 @@ bool read_and_log_metric(std::ofstream& log, const std::string& timestamp, modbu
         final_value = static_cast<double>(val) / metric.scale;
     }
 
-    // Wenn alles gültig ist, ins Log schreiben
-    write_row(log, timestamp, metric.name, std::to_string(final_value), metric.unit);
+    const std::string value = std::to_string(final_value);
+    write_row(log, timestamp, metric.name, value, metric.unit);
+    print_value(metric.name, value, metric.unit);
     return true;
 }
 
@@ -248,7 +262,6 @@ void write_row(std::ofstream& log, const std::string& timestamp,
                const std::string& unit) {
     const std::string row = timestamp + ',' + csv_escape(name) + ',' +
                             csv_escape(value) + ',' + csv_escape(unit);
-    std::cout << row << '\n';
     log << row << '\n';
 }
 
@@ -298,17 +311,44 @@ bool poll_once_ext(const PollOptions& options, std::ofstream& log) {
     }
 
     const std::string timestamp = timestamp_utc();
+    std::cout << "SUN2000-Messwerte (" << timestamp << " UTC)\n";
     
     // Identifikationsdaten (Holding Registers)
+    print_section("Identifikation");
     const std::string model = read_string(context, 30000, 15);
     const std::string serial = read_string(context, 30015, 10);
     const std::string firmware = read_string(context, 30035, 15);
     
-    if (!model.empty()) write_row(log, timestamp, "model_name", model, "");
-    if (!serial.empty()) write_row(log, timestamp, "serial_number", serial, "");
-    if (!firmware.empty()) write_row(log, timestamp, "firmware_version", firmware, "");
+    if (!model.empty()) {
+        write_row(log, timestamp, "model_name", model, "");
+        print_value("Modell", model, "");
+    }
+    if (!serial.empty()) {
+        write_row(log, timestamp, "serial_number", serial, "");
+        print_value("Seriennummer", serial, "");
+    }
+    if (!firmware.empty()) {
+        write_row(log, timestamp, "firmware_version", firmware, "");
+        print_value("Firmware", firmware, "");
+    }
+
+    std::uint16_t model_id = 0;
+    const int model_id_result =
+        modbus_read_registers(context, 30070, 1, &model_id);
+    if (model_id_result == 1) {
+        const std::string value = std::to_string(model_id);
+        write_row(log, timestamp, "model_id", value, "");
+        print_value("Modell-ID", value, "");
+    } else {
+        std::cerr << "Modell-ID (Register 30070) nicht lesbar: "
+                  << (model_id_result == -1
+                          ? modbus_strerror(errno)
+                          : "unerwartete Anzahl gelesener Register")
+                  << '\n';
+    }
 
     // PV-String Anzahl
+    print_section("PV-Eingaenge");
     uint16_t pv_string_count = 0;
     uint16_t count_reg = 0;
     const int count_result =
@@ -361,6 +401,7 @@ bool poll_once_ext(const PollOptions& options, std::ofstream& log) {
         {"monthly_yield_energy", "kWh", 32116, RegisterFormat::unsigned32, 100},
     }};
     
+    print_section("Wechselrichter und Netz");
     for (const auto& metric : inverter_metrics) {
         read_and_log_metric(log, timestamp, context, metric);
     }
@@ -378,11 +419,13 @@ bool poll_once_ext(const PollOptions& options, std::ofstream& log) {
         {"battery_total_charge", "kWh", 37780, RegisterFormat::unsigned32, 100},
     }};
     
+    print_section("Batterie");
     for (const auto& metric : battery_metrics) {
         read_and_log_metric(log, timestamp, context, metric);
     }
 
     log.flush();
+    std::cout << "\nAbfrage abgeschlossen.\n";
     modbus_close(context);
     modbus_free(context);
     return static_cast<bool>(log);

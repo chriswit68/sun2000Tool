@@ -43,6 +43,11 @@ Abdeckung aller firmware- und komponentenabhaengigen Register. Optimizer,
 Batterie-Packdetails und schreibbare Konfigurationsregister sind nicht enthalten.
 Die Datei wird im CSV-Format fortlaufend erweitert; Zeitstempel sind UTC.
 `--once` liest einmal. `Ctrl-C` beendet den Dauerbetrieb.
+Die Identifikationsdaten enthalten auch die numerische Modell-ID aus Register
+30070 (CSV-Signal `model_id`).
+Die CSV-Datei enthaelt ausschliesslich CSV-Datensaetze. Auf der Konsole werden
+die Messwerte separat und nach Identifikation, PV-Eingaengen, Wechselrichter/
+Netz und Batterie gruppiert ausgegeben; Fehler erscheinen auf `stderr`.
 
 Port 502 ist haeufig, Huawei-Geraete koennen aber auch Port 6607 verwenden.
 Bei SDongle-Verbindungen ist Unit-ID 1 haeufig; beim direkten Wechselrichterzugriff
