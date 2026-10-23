@@ -204,6 +204,17 @@ public enum TelemetrySignalCatalog {
         return String(acronym.prefix(4))
     }
 
+    public static func menuBarValue(for value: TelemetryValue) -> String {
+        let isCurrent = value.signal.hasSuffix("_current") ||
+            value.signal.hasPrefix("phase_current_")
+        let isTemperature = value.signal.contains("_temperature")
+        guard (isCurrent || isTemperature),
+              let numericValue = Double(value.value) else {
+            return value.displayValue
+        }
+        return String(format: "%.1f", locale: Locale.current, numericValue)
+    }
+
     public static func group(for signal: String) -> String {
         if signal == "model_name" || signal == "model_name_individual" ||
             signal == "serial_number" || signal == "product_code" ||

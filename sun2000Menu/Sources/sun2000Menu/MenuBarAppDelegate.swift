@@ -202,7 +202,8 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate {
         let parts = settings.selectedSignals.compactMap { signal -> String? in
             guard let value = valuesBySignal[signal] else { return nil }
             let unit = value.unit.isEmpty ? "" : value.unit
-            return "\(TelemetrySignalCatalog.shortLabel(for: signal)) \(value.displayValue)\(unit)"
+            let displayValue = TelemetrySignalCatalog.menuBarValue(for: value)
+            return "\(TelemetrySignalCatalog.shortLabel(for: signal)) \(displayValue)\(unit)"
         }
         let title = parts.isEmpty ? "" : " " + parts.joined(separator: "  ·  ")
         let maximumLength = 42

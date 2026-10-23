@@ -42,6 +42,63 @@ final class TelemetryCSVTests: XCTestCase {
             4
         )
     }
+
+    func testCurrentValuesUseOneDecimalOnlyInMenuBar() {
+        let pvCurrent = TelemetryValue(
+            timestamp: "",
+            signal: "pv_1_current",
+            value: "0.640000",
+            unit: "A"
+        )
+        let phaseCurrent = TelemetryValue(
+            timestamp: "",
+            signal: "phase_current_a",
+            value: "1.234000",
+            unit: "A"
+        )
+        let power = TelemetryValue(
+            timestamp: "",
+            signal: "active_power",
+            value: "520.000000",
+            unit: "W"
+        )
+
+        XCTAssertEqual(
+            TelemetrySignalCatalog.menuBarValue(for: pvCurrent),
+            String(format: "%.1f", locale: Locale.current, 0.64)
+        )
+        XCTAssertEqual(
+            TelemetrySignalCatalog.menuBarValue(for: phaseCurrent),
+            String(format: "%.1f", locale: Locale.current, 1.234)
+        )
+        XCTAssertEqual(TelemetrySignalCatalog.menuBarValue(for: power), "520")
+        XCTAssertEqual(pvCurrent.displayValue, "0.640000")
+    }
+
+    func testTemperatureValuesUseOneDecimalOnlyInMenuBar() {
+        let inverterTemperature = TelemetryValue(
+            timestamp: "",
+            signal: "internal_temperature",
+            value: "37.200000",
+            unit: "C"
+        )
+        let batteryTemperature = TelemetryValue(
+            timestamp: "",
+            signal: "battery_unit_1_temperature",
+            value: "20.350000",
+            unit: "C"
+        )
+
+        XCTAssertEqual(
+            TelemetrySignalCatalog.menuBarValue(for: inverterTemperature),
+            String(format: "%.1f", locale: Locale.current, 37.2)
+        )
+        XCTAssertEqual(
+            TelemetrySignalCatalog.menuBarValue(for: batteryTemperature),
+            String(format: "%.1f", locale: Locale.current, 20.35)
+        )
+        XCTAssertEqual(inverterTemperature.displayValue, "37.200000")
+    }
 }
 
 @MainActor
