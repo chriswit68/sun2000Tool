@@ -42,11 +42,27 @@ erweitert und getestet werden.
 	--interval-seconds 10 --log-file sun2000.csv
 ```
 
-Der erste lesende Profilumfang umfasst Wechselrichter-Identitaet, PV-Eingaenge,
-Netz-/Leistungswerte und Batterieaggregate. Die Registerdefinitionen folgen der
-Huawei-Solar-Modbus-Registerliste. Dies ist ein Startprofil, keine vollstaendige
-Abdeckung aller firmware- und komponentenabhaengigen Register. Optimizer,
-Batterie-Packdetails und schreibbare Konfigurationsregister sind nicht enthalten.
+Die Konsole zeigt standardmaessig eine kompakte Zusammenfassung mit den
+wichtigsten Identifikations-, PV-, Wechselrichter-/Netz- und Batteriewerten.
+In dieser Zusammenfassung werden Protokoll-Sentinelwerte sowie Werte ausserhalb
+grosszuegiger physikalischer Grenzen ausgeblendet; plausible Nullwerte bleiben
+sichtbar. Die vollstaendige Ansicht zeigt die gelesenen Rohwerte ungefiltert.
+Register-Lesefehler werden im `summary`-Modus ebenfalls unterdrueckt, im Modus
+`all` jedoch auf `stderr` ausgegeben. Fehler beim Verbindungsaufbau bleiben
+unabhaengig vom Ausgabemodus sichtbar.
+Mit `--console-output all` werden alle gelesenen Werte auf der Konsole
+ausgegeben. `--console-output summary` waehlt die kompakte Ansicht explizit.
+Beide Modi lesen dieselben Register; die CSV-Datei enthaelt unabhaengig von
+der Konsolenauswahl weiterhin alle erfolgreich gelesenen Werte.
+
+Das lesende Profil umfasst Wechselrichter-Identitaet und Kenndaten,
+PV-Eingaenge, Netz-/Leistungswerte, Betriebszustand, Alarme, Energiezaehler und
+Batterieregister fuer bis zu zwei Speichereinheiten. Die Registerdefinitionen
+folgen der Huawei-Solar-Modbus-Registerliste. Dies ist weiterhin keine
+vollstaendige Abdeckung aller firmware- und komponentenabhaengigen Register.
+Optimizerdaten verwenden einen separaten Datei-/Synchronisationsmechanismus;
+schreibbare Konfigurationsregister sowie detaillierte Telemetrie einzelner
+Batteriepacks werden nicht ausgelesen. SOH-Kalibrierstatusregister sind enthalten.
 Die Datei wird im CSV-Format fortlaufend erweitert; Zeitstempel sind UTC.
 `--once` liest einmal. `Ctrl-C` beendet den Dauerbetrieb.
 Die Identifikationsdaten enthalten auch die numerische Modell-ID aus Register
@@ -57,6 +73,9 @@ zum Vergleich unter `model_name_individual` ausgegeben.
 Die CSV-Datei enthaelt ausschliesslich CSV-Datensaetze. Auf der Konsole werden
 die Messwerte separat und nach Identifikation, PV-Eingaengen, Wechselrichter/
 Netz und Batterie gruppiert ausgegeben; Fehler erscheinen auf `stderr`.
+Epoch-Zeitfelder behalten ihren Sekunden-Rohwert und erhalten zusaetzlich ein
+ISO-8601-UTC-Feld (`<signal>_utc`); nicht gesetzte Sentinel-Werte werden dort
+als `N/A` ausgegeben.
 
 Port 502 ist haeufig, Huawei-Geraete koennen aber auch Port 6607 verwenden.
 Bei SDongle-Verbindungen ist Unit-ID 1 haeufig; beim direkten Wechselrichterzugriff

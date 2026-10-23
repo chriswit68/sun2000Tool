@@ -21,6 +21,8 @@ struct PollOptions {
     int unit_id{1};
     unsigned int interval_seconds{};
     bool once{};
+    sun2000::ConsoleOutputMode console_output{
+        sun2000::ConsoleOutputMode::summary};
 };
 
 void handle_signal(int) {
@@ -30,7 +32,8 @@ void handle_signal(int) {
 void print_usage(std::ostream& output) {
     output << "Verwendung:\n"
            << "  sun2000Tool poll --host HOST --interval-seconds N [--port PORT] "
-              "[--unit-id ID] [--log-file DATEI] [--once]\n"
+              "[--unit-id ID] [--log-file DATEI] [--once] "
+              "[--console-output summary|all]\n"
            << "  sun2000Tool scan --cidr IPV4/PRAEFIX [--port PORT] [--workers N] "
               "[--timeout-ms N] [--max-hosts N]\n"
            << "  sun2000Tool --help\n";
@@ -80,6 +83,17 @@ PollOptions parse_poll_options(int argc, char* argv[]) {
             options.log_file = take_value(index, argc, argv, argument);
         } else if (argument == "--once") {
             options.once = true;
+        } else if (argument == "--console-output") {
+            const std::string value = take_value(index, argc, argv, argument);
+            if (value == "summary") {
+                options.console_output = sun2000::ConsoleOutputMode::summary;
+            } else if (value == "all") {
+                options.console_output = sun2000::ConsoleOutputMode::all;
+            } else {
+                throw std::invalid_argument(
+                    "Ungueltiger Wert fuer --console-output: " + value +
+                    " (erlaubt: summary, all)");
+            }
         } else if (argument == "--help") {
             print_usage(std::cout);
             std::exit(0);
@@ -139,7 +153,7 @@ modbus::ScanOptions parse_scan_options(int argc, char* argv[],
 
 int run_poll(const PollOptions& options) {
     sun2000::CsvWriter csv(options.log_file);
-    sun2000::ConsoleReporter console(std::cout);
+    sun2000::ConsoleReporter console(std::cout, options.console_output);
     sun2000::Sun2000Poller poller(
         {options.host, options.port, options.unit_id}, csv, console);
 
