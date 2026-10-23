@@ -71,14 +71,16 @@ std::int32_t decode_signed32(std::uint32_t raw) {
 
 void report_value(const std::string& timestamp, const std::string& signal,
                   const std::string& label, const std::string& value,
-                  const std::string& unit, CsvWriter& csv,
+                  const std::string& unit, CsvWriter* csv,
                   ConsoleReporter& console) {
-    csv.write(timestamp, signal, value, unit);
+    if (csv != nullptr) {
+        csv->write(timestamp, signal, value, unit);
+    }
     console.value(signal, label, value, unit);
 }
 
 void read_and_report_metric(ModbusClient& client, const Metric& metric,
-                            const std::string& timestamp, CsvWriter& csv,
+                            const std::string& timestamp, CsvWriter* csv,
                             ConsoleReporter& console) {
     const int register_count =
         metric.format == RegisterFormat::unsigned32 ||
@@ -150,7 +152,7 @@ void read_and_report_metric(ModbusClient& client, const Metric& metric,
 void read_and_report_string(ModbusClient& client, int address,
                             int register_count, const std::string& signal,
                             const std::string& label,
-                            const std::string& timestamp, CsvWriter& csv,
+                            const std::string& timestamp, CsvWriter* csv,
                             ConsoleReporter& console) {
     try {
         const std::string value = client.read_string(address, register_count);
@@ -164,7 +166,7 @@ void read_and_report_string(ModbusClient& client, int address,
 
 }  // namespace
 
-Sun2000Poller::Sun2000Poller(PollConnection connection, CsvWriter& csv,
+Sun2000Poller::Sun2000Poller(PollConnection connection, CsvWriter* csv,
                              ConsoleReporter& console)
     : connection_(std::move(connection)), csv_(csv), console_(console) {}
 
@@ -839,7 +841,9 @@ bool Sun2000Poller::poll_once() {
             read_and_report_metric(client, metric, timestamp, csv_, console_);
         }
 
-        csv_.flush();
+        if (csv_ != nullptr) {
+            csv_->flush();
+        }
         console_.finish_poll();
         return true;
     } catch (const std::exception& error) {

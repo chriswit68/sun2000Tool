@@ -6,6 +6,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -21,6 +22,8 @@ struct PollOptions {
     int unit_id{1};
     unsigned int interval_seconds{};
     bool once{};
+    bool csv_enabled{};
+    bool log_file_specified{};
     sun2000::ConsoleOutputMode console_output{
         sun2000::ConsoleOutputMode::summary};
 };
@@ -32,7 +35,7 @@ void handle_signal(int) {
 void print_usage(std::ostream& output) {
     output << "Verwendung:\n"
            << "  sun2000Tool poll --host HOST --interval-seconds N [--port PORT] "
-              "[--unit-id ID] [--log-file DATEI] [--once] "
+              "[--unit-id ID] [--csv [--log-file DATEI]] [--once] "
               "[--console-output summary|all]\n"
            << "  sun2000Tool scan --cidr IPV4/PRAEFIX [--port PORT] [--workers N] "
               "[--timeout-ms N] [--max-hosts N]\n"
@@ -81,6 +84,9 @@ PollOptions parse_poll_options(int argc, char* argv[]) {
                 take_value(index, argc, argv, argument), argument, 86400));
         } else if (argument == "--log-file") {
             options.log_file = take_value(index, argc, argv, argument);
+            options.log_file_specified = true;
+        } else if (argument == "--csv") {
+            options.csv_enabled = true;
         } else if (argument == "--once") {
             options.once = true;
         } else if (argument == "--console-output") {
@@ -111,6 +117,9 @@ PollOptions parse_poll_options(int argc, char* argv[]) {
     }
     if (options.port == 0 || options.log_file.empty()) {
         throw std::invalid_argument("Port und Logdatei muessen gueltig sein.");
+    }
+    if (options.log_file_specified && !options.csv_enabled) {
+        throw std::invalid_argument("--log-file erfordert die Option --csv.");
     }
     return options;
 }
@@ -152,10 +161,13 @@ modbus::ScanOptions parse_scan_options(int argc, char* argv[],
 }
 
 int run_poll(const PollOptions& options) {
-    sun2000::CsvWriter csv(options.log_file);
+    std::unique_ptr<sun2000::CsvWriter> csv;
+    if (options.csv_enabled) {
+        csv = std::make_unique<sun2000::CsvWriter>(options.log_file);
+    }
     sun2000::ConsoleReporter console(std::cout, options.console_output);
     sun2000::Sun2000Poller poller(
-        {options.host, options.port, options.unit_id}, csv, console);
+        {options.host, options.port, options.unit_id}, csv.get(), console);
 
     std::signal(SIGINT, handle_signal);
     do {

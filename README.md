@@ -39,7 +39,16 @@ erweitert und getestet werden.
 
 ```bash
 ./build/sun2000Tool poll --host 192.168.1.50 --port 502 --unit-id 1 \
-	--interval-seconds 10 --log-file sun2000.csv
+	--interval-seconds 10
+```
+
+CSV-Ausgabe ist standardmaessig deaktiviert. Mit `--csv` wird sie eingeschaltet;
+optional kann mit `--log-file DATEI` ein anderer Dateiname angegeben werden.
+Ohne diese Option werden keine CSV-Datei angelegt oder veraendert:
+
+```bash
+./build/sun2000Tool poll --host 192.168.1.50 --interval-seconds 10 \
+	--csv --log-file sun2000.csv
 ```
 
 Die Konsole zeigt standardmaessig eine kompakte Zusammenfassung mit den
@@ -52,8 +61,9 @@ Register-Lesefehler werden im `summary`-Modus ebenfalls unterdrueckt, im Modus
 unabhaengig vom Ausgabemodus sichtbar.
 Mit `--console-output all` werden alle gelesenen Werte auf der Konsole
 ausgegeben. `--console-output summary` waehlt die kompakte Ansicht explizit.
-Beide Modi lesen dieselben Register; die CSV-Datei enthaelt unabhaengig von
-der Konsolenauswahl weiterhin alle erfolgreich gelesenen Werte.
+Beide Modi lesen dieselben Register; falls CSV mit `--csv` aktiviert ist,
+enthaelt die Datei unabhaengig von der Konsolenauswahl alle erfolgreich
+gelesenen Werte.
 
 Das lesende Profil umfasst Wechselrichter-Identitaet und Kenndaten,
 PV-Eingaenge, Netz-/Leistungswerte, Betriebszustand, Alarme, Energiezaehler und
@@ -63,7 +73,7 @@ vollstaendige Abdeckung aller firmware- und komponentenabhaengigen Register.
 Optimizerdaten verwenden einen separaten Datei-/Synchronisationsmechanismus;
 schreibbare Konfigurationsregister sowie detaillierte Telemetrie einzelner
 Batteriepacks werden nicht ausgelesen. SOH-Kalibrierstatusregister sind enthalten.
-Die Datei wird im CSV-Format fortlaufend erweitert; Zeitstempel sind UTC.
+Die aktivierte CSV-Datei wird fortlaufend erweitert; Zeitstempel sind UTC.
 `--once` liest einmal. `Ctrl-C` beendet den Dauerbetrieb.
 Die Identifikationsdaten enthalten auch die numerische Modell-ID aus Register
 30070 (CSV-Signal `model_id`).

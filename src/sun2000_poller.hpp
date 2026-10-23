@@ -14,14 +14,14 @@ struct PollConnection {
 
 class Sun2000Poller {
 public:
-    Sun2000Poller(PollConnection connection, CsvWriter& csv,
+    Sun2000Poller(PollConnection connection, CsvWriter* csv,
                   ConsoleReporter& console);
 
     bool poll_once();
 
 private:
     PollConnection connection_;
-    CsvWriter& csv_;
+    CsvWriter* csv_;
     ConsoleReporter& console_;
 };
 
