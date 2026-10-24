@@ -1,6 +1,7 @@
 #include "network_scanner.hpp"
 #include "output.hpp"
 #include "sun2000_poller.hpp"
+#include "timescale_writer.hpp"
 
 #include <csignal>
 #include <chrono>
@@ -18,11 +19,16 @@ volatile std::sig_atomic_t keep_running = 1;
 struct PollOptions {
     std::string host;
     std::string log_file{"sun2000.csv"};
+    std::string db_host{"wittis-ds423-01"};
+    std::string db_name{"pv_user_db"};
+    std::string db_user{"pv_user"};
     int port{502};
     int unit_id{1};
+    int db_port{5444};
     unsigned int interval_seconds{};
     bool once{};
     bool csv_enabled{};
+    bool timescale_enabled{};
     bool log_file_specified{};
     sun2000::ConsoleOutputMode console_output{
         sun2000::ConsoleOutputMode::summary};
@@ -36,6 +42,8 @@ void print_usage(std::ostream& output) {
     output << "Verwendung:\n"
            << "  sun2000Tool poll --host HOST --interval-seconds N [--port PORT] "
               "[--unit-id ID] [--csv [--log-file DATEI]] [--once] "
+              "[--timescale-db [--db-host HOST] [--db-port PORT] "
+              "[--db-name NAME] [--db-user USER]] "
               "[--console-output summary|all (Standard: summary)]\n"
            << "  sun2000Tool scan --cidr IPV4/PRAEFIX [--port PORT] [--workers N] "
               "[--timeout-ms N] [--max-hosts N]\n"
@@ -85,6 +93,17 @@ PollOptions parse_poll_options(int argc, char* argv[]) {
         } else if (argument == "--log-file") {
             options.log_file = take_value(index, argc, argv, argument);
             options.log_file_specified = true;
+        } else if (argument == "--timescale-db") {
+            options.timescale_enabled = true;
+        } else if (argument == "--db-host") {
+            options.db_host = take_value(index, argc, argv, argument);
+        } else if (argument == "--db-port") {
+            options.db_port = static_cast<int>(parse_number(
+                take_value(index, argc, argv, argument), argument, 65535));
+        } else if (argument == "--db-name") {
+            options.db_name = take_value(index, argc, argv, argument);
+        } else if (argument == "--db-user") {
+            options.db_user = take_value(index, argc, argv, argument);
         } else if (argument == "--csv") {
             options.csv_enabled = true;
         } else if (argument == "--once") {
@@ -120,6 +139,20 @@ PollOptions parse_poll_options(int argc, char* argv[]) {
     }
     if (options.log_file_specified && !options.csv_enabled) {
         throw std::invalid_argument("--log-file erfordert die Option --csv.");
+    }
+    if (options.timescale_enabled && !options.csv_enabled) {
+        throw std::invalid_argument(
+            "--timescale-db erfordert --csv, da die Speicherung beim "
+            "Stundenwechsel der CSV erfolgt.");
+    }
+    if (options.timescale_enabled && options.once) {
+        throw std::invalid_argument(
+            "--timescale-db funktioniert nur im Dauerbetrieb und nicht mit --once.");
+    }
+    if (options.timescale_enabled &&
+        (options.db_host.empty() || options.db_port == 0 ||
+         options.db_name.empty() || options.db_user.empty())) {
+        throw std::invalid_argument("TimescaleDB-Verbindungsdaten muessen gueltig sein.");
     }
     return options;
 }
@@ -161,9 +194,33 @@ modbus::ScanOptions parse_scan_options(int argc, char* argv[],
 }
 
 int run_poll(const PollOptions& options) {
+    std::unique_ptr<sun2000::TimescaleWriter> timescale;
+    if (options.timescale_enabled) {
+        const char* password = std::getenv("PGPASSWORD");
+        if (password == nullptr || password[0] == '\0') {
+            throw std::invalid_argument(
+                "TimescaleDB ist aktiviert, aber die Umgebungsvariable "
+                "PGPASSWORD ist nicht gesetzt.");
+        }
+        timescale = std::make_unique<sun2000::TimescaleWriter>(
+            sun2000::TimescaleConfig{options.db_host, options.db_port,
+                                     options.db_name, options.db_user,
+                                     password});
+    }
     std::unique_ptr<sun2000::CsvWriter> csv;
     if (options.csv_enabled) {
-        csv = std::make_unique<sun2000::CsvWriter>(options.log_file);
+        if (timescale) {
+            csv = std::make_unique<sun2000::CsvWriter>(
+                options.log_file, [&timescale](const std::string& previous_csv) {
+                    const auto count =
+                        timescale->store_latest_sample(previous_csv);
+                    std::cerr << "TimescaleDB: " << count
+                              << " Werte aus " << previous_csv
+                              << " gespeichert.\n";
+                });
+        } else {
+            csv = std::make_unique<sun2000::CsvWriter>(options.log_file);
+        }
     }
     sun2000::ConsoleReporter console(std::cout, options.console_output);
     sun2000::Sun2000Poller poller(

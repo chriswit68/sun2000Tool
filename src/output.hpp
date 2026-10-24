@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <string>
 
@@ -16,8 +17,11 @@ enum class ConsoleOutputMode {
 // sun2000_YYYY-MM-DDTHH.csv und behaelt maximal 24 passende Stunden-Dateien.
 class CsvWriter {
 public:
+    using BeforeHourOpen = std::function<void(const std::string&)>;
+
     // Wirft bei einem leeren oder ungueltigen Basisdateipfad.
-    explicit CsvWriter(const std::string& path);
+    explicit CsvWriter(const std::string& path,
+                       BeforeHourOpen before_hour_open = {});
 
     // timestamp muss YYYY-MM-DDTHH:MM:SSZ sein. Datei- und Zeitstempelfehler
     // werden als std::exception gemeldet.
@@ -34,6 +38,7 @@ private:
     std::string base_path_;
     std::string active_hour_;
     std::ofstream stream_;
+    BeforeHourOpen before_hour_open_;
 };
 
 class ConsoleReporter {

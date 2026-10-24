@@ -3,5 +3,6 @@ build/
 .swiftpm/
 sun2000Menu/.build/
 sun2000Menu/.swiftpm/
+.env
 data/*.csv
 *.csv

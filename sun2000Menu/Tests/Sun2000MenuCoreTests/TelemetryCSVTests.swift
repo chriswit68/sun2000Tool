@@ -58,6 +58,23 @@ final class TelemetryCSVTests: XCTestCase {
         )
     }
 
+    func testLatestSampleSkipsRowsContainingNullBytesAndReportsThem() throws {
+        let csv = """
+        timestamp_utc,signal,value,unit
+        2026-10-23T08:00:00Z,"active_power","500.000000","W"
+        \0\0\0"0000","bitfield"2026-10-23T08:01:00Z,"fault_code","0","code"
+        2026-10-23T08:02:00Z,"active_power","600.000000","W"
+        """
+
+        let sample = try TelemetryCSVParser.latestSampleWithDiagnostics(
+            from: csv
+        )
+
+        XCTAssertEqual(sample.values.map(\.signal), ["active_power"])
+        XCTAssertEqual(sample.values.first?.value, "600.000000")
+        XCTAssertEqual(sample.skippedCorruptRows, 1)
+    }
+
     func testStatusBarLabelsStayCompact() {
         XCTAssertEqual(TelemetrySignalCatalog.shortLabel(for: "active_power"), "P")
         XCTAssertEqual(TelemetrySignalCatalog.shortLabel(for: "battery_soc"), "SOC")

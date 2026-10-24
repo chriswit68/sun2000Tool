@@ -15,6 +15,8 @@ if(NOT LIBMODBUS_INCLUDE_DIR OR NOT LIBMODBUS_LIBRARY)
 	message(FATAL_ERROR "libmodbus wurde nicht gefunden. Installiere libmodbus und setze bei Bedarf LIBMODBUS_INCLUDE_DIR und LIBMODBUS_LIBRARY.")
 endif()
 
+find_package(PostgreSQL REQUIRED)
+
 add_library(modbus_scanner src/network_scanner.cpp)
 target_include_directories(modbus_scanner PUBLIC
 	${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -26,8 +28,11 @@ add_executable(${PROJECT_NAME}
 	src/main.cpp
 	src/modbus_client.cpp
 	src/output.cpp
-	src/sun2000_poller.cpp)
-target_link_libraries(${PROJECT_NAME} PRIVATE modbus_scanner)
+	src/sun2000_poller.cpp
+	src/timescale_writer.cpp)
+target_include_directories(${PROJECT_NAME} PRIVATE ${PostgreSQL_INCLUDE_DIRS})
+target_link_libraries(${PROJECT_NAME} PRIVATE
+	modbus_scanner ${PostgreSQL_LIBRARIES})
 target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra)
 
 include(CTest)
@@ -50,4 +55,16 @@ if(BUILD_TESTING)
 		${CMAKE_CURRENT_SOURCE_DIR}/src)
 	target_compile_options(sun2000Tool-Register-Tests PRIVATE -Wall -Wextra)
 	add_test(NAME sun2000Tool-Register-Tests COMMAND sun2000Tool-Register-Tests)
+
+	add_executable(sun2000Tool-Timescale-Tests
+		tests/timescale_tests.cpp
+		src/timescale_writer.cpp)
+	target_include_directories(sun2000Tool-Timescale-Tests PRIVATE
+		${CMAKE_CURRENT_SOURCE_DIR}/src)
+	target_include_directories(sun2000Tool-Timescale-Tests PRIVATE
+		${PostgreSQL_INCLUDE_DIRS})
+	target_link_libraries(sun2000Tool-Timescale-Tests PRIVATE
+		${PostgreSQL_LIBRARIES})
+	target_compile_options(sun2000Tool-Timescale-Tests PRIVATE -Wall -Wextra)
+	add_test(NAME sun2000Tool-Timescale-Tests COMMAND sun2000Tool-Timescale-Tests)
 endif()

@@ -1,0 +1,11 @@
+.git
+.gitignore
+.DS_Store
+.env
+.build
+build
+data
+sun2000Menu
+tests
+docs
+*.csv

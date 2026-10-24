@@ -7,6 +7,12 @@ Kleines C++17-Programm zum Auslesen einer Huawei-SUN2000-Anlage per Modbus TCP.
 - C++-Compiler (z. B. Xcode Command Line Tools)
 - CMake 3.10 oder neuer
 - `libmodbus` (macOS: `brew install libmodbus`)
+- `libpq` fuer den optionalen TimescaleDB-Schreiber (macOS: `brew install libpq`)
+- Docker fuer den optionalen Linux-Containerbetrieb (z. B. Synology Container
+  Manager oder Dockhand)
+
+Die TimescaleDB-Anbindung nutzt libpq direkt, damit der bestehende C++17-
+Sprachstandard erhalten bleibt; libpqxx 8 setzt C++20 voraus.
 
 ## Bauen und starten
 
@@ -15,6 +21,14 @@ cmake -S . -B build
 cmake --build build
 ./build/sun2000Tool --help
 ```
+
+### Docker / Synology
+
+Ein Linux-Container-Image mit persistentem CSV-Verzeichnis und
+TimescaleDB-Anbindung ist fuer Synology und Dockhand vorbereitet. Einrichtung,
+Netzwerk- und Berechtigungshinweise stehen in
+[docs/docker/README.md](docs/docker/README.md). Der native macOS-Build bleibt
+unveraendert und kann weiterhin direkt mit CMake gestartet werden.
 
 ### Native macOS-Menueleisten-App
 
@@ -82,6 +96,47 @@ oder veraendert:
 ./build/sun2000Tool poll --host 192.168.1.50 --interval-seconds 10 \
 	--csv --log-file sun2000.csv
 ```
+
+### TimescaleDB-Archivierung
+
+Optional kann `--timescale-db` zusammen mit `--csv` aktiviert werden. Beim
+Wechsel in eine neue UTC-Stunde speichert das Programm vor dem Anlegen der neuen
+CSV-Datei den letzten vollstaendigen Messsatz der vorherigen Stunden-Datei in
+TimescaleDB. Beim Start eines Dauerlaufs wird ebenfalls die vorhandene Datei der
+unmittelbar vorherigen Stunde archiviert. `--once` schreibt nicht in die
+Datenbank; `--timescale-db` kann deshalb nicht zusammen mit `--once` verwendet
+werden.
+
+Die Tabelle `sun2000_telemetry` und die Timescale-Hypertable werden bei der
+Verbindung automatisch angelegt. Jede Zeile enthaelt Zeitstempel, Signalname,
+Wert als Originaltext, fuer numerische Werte zusaetzlich `numeric_value`
+(double precision), sowie Einheit. So bleiben Textsignale erhalten und
+Messwerte koennen ohne Cast direkt numerisch ausgewertet werden. Der letzte
+Messsatz wird transaktional gespeichert;
+Wiederholungen werden ueber `(timestamp, signal)` idempotent aktualisiert. Die
+genaue Messwertdarstellung bleibt so auch fuer Textsignale erhalten.
+
+Standardverbindung: Host `wittis-ds423-01`, Port `5444`, Datenbank `pv_user_db`,
+Benutzer `pv_user`. Abweichungen koennen mit `--db-host`, `--db-port`,
+`--db-name` und `--db-user` angegeben werden. Das Passwort wird ausschliesslich
+ueber die Umgebungsvariable `PGPASSWORD` bezogen und darf nicht in Argumenten
+oder im Quellcode abgelegt werden. Fuer einen Dauerlauf mit Datenbankarchiv:
+
+```bash
+./build/sun2000Tool poll --host 192.168.1.50 --interval-seconds 10 \
+	--csv --log-file /pfad/sun2000.csv --timescale-db
+```
+
+Die Variable `PGPASSWORD` muss vor dem Start sicher in der Laufzeitumgebung
+gesetzt sein. Kann die Datenbankverbindung oder das Schema beim Programmstart
+nicht eingerichtet werden, bricht der Start mit einer Fehlermeldung ab. Scheitert
+spaeter beim Stundenwechsel das CSV-Einlesen oder die Datenbanktransaktion, wird
+die neue Stunden-Datei nicht vorzeitig geoeffnet; der Fehler wird ausgegeben und
+beim naechsten Poll erneut versucht.
+
+Ein importierbares Grafana-Dashboard mit kompakten Kennzahlen, Zeitreihen und
+Tabellen fuer alle Signale ist in
+[docs/grafana/README.md](docs/grafana/README.md) beschrieben.
 
 Die Konsole zeigt standardmaessig eine kompakte Zusammenfassung mit den
 wichtigsten Identifikations-, PV-, Wechselrichter-/Netz- und Batteriewerten.

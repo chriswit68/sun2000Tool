@@ -16,6 +16,11 @@ public struct TelemetryValue: Equatable, Identifiable, Sendable {
     }
 }
 
+public struct TelemetryCSVSample: Equatable, Sendable {
+    public let values: [TelemetryValue]
+    public let skippedCorruptRows: Int
+}
+
 public enum TelemetryCSVError: LocalizedError {
     case invalidHeader
     case malformedRow(Int)
@@ -35,7 +40,20 @@ public enum TelemetryCSVError: LocalizedError {
 
 public enum TelemetryCSVParser {
     public static func latestSample(from contents: String) throws -> [TelemetryValue] {
-        let rows = try parseRows(contents)
+        try latestSampleWithDiagnostics(from: contents).values
+    }
+
+    public static func latestSampleWithDiagnostics(
+        from contents: String
+    ) throws -> TelemetryCSVSample {
+        let physicalRows = contents.split(
+            separator: "\n",
+            omittingEmptySubsequences: false
+        )
+        let validRows = physicalRows.filter { !$0.contains("\0") }
+        let skippedCorruptRows = physicalRows.count - validRows.count
+        let sanitizedContents = validRows.joined(separator: "\n")
+        let rows = try parseRows(sanitizedContents)
         guard rows.first == ["timestamp_utc", "signal", "value", "unit"] else {
             throw TelemetryCSVError.invalidHeader
         }
@@ -52,14 +70,20 @@ public enum TelemetryCSVParser {
             )
         }
         guard let latestTimestamp = records.map(\.timestamp).max() else {
-            return []
+            return TelemetryCSVSample(
+                values: [],
+                skippedCorruptRows: skippedCorruptRows
+            )
         }
 
         var latestBySignal: [String: TelemetryValue] = [:]
         for record in records where record.timestamp == latestTimestamp {
             latestBySignal[record.signal] = record
         }
-        return latestBySignal.values.sorted { $0.signal < $1.signal }
+        return TelemetryCSVSample(
+            values: latestBySignal.values.sorted { $0.signal < $1.signal },
+            skippedCorruptRows: skippedCorruptRows
+        )
     }
 
     private static func parseRows(_ contents: String) throws -> [[String]] {

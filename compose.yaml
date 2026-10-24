@@ -1,0 +1,37 @@
+services:
+  sun2000tool:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: sun2000tool:local
+    container_name: sun2000tool
+    restart: unless-stopped
+    init: true
+    user: "${SUN2000_UID:-1000}:${SUN2000_GID:-1000}"
+    command:
+      - poll
+      - --host
+      - "${SUN2000_HOST:?Set SUN2000_HOST}"
+      - --interval-seconds
+      - "${SUN2000_INTERVAL_SECONDS:-60}"
+      - --csv
+      - --log-file
+      - /data/sun2000.csv
+      - --timescale-db
+      - --db-host
+      - "${TIMESCALE_DB_HOST:?Set TIMESCALE_DB_HOST}"
+      - --db-port
+      - "${TIMESCALE_DB_PORT:-5444}"
+      - --db-name
+      - "${TIMESCALE_DB_NAME:-pv_user_db}"
+      - --db-user
+      - "${TIMESCALE_DB_USER:-pv_user}"
+    environment:
+      PGPASSWORD: "${PGPASSWORD:?Set PGPASSWORD}"
+    volumes:
+      - ./data:/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

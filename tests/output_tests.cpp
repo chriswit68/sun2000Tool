@@ -9,6 +9,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace {
 
@@ -48,6 +49,7 @@ void test_csv_and_console_outputs_are_separate() {
         sun2000::CsvWriter csv(path.string());
         sun2000::ConsoleReporter console(console_stream);
         csv.write(timestamp, "model_id", "487", "");
+        csv.write(timestamp, "text_value", std::string("A\0B", 3), "");
         csv.write(timestamp, "internal_alarm", "0", "code");
         csv.write(timestamp, "battery_soc", "6553.5", "%");
         csv.flush();
@@ -75,6 +77,10 @@ void test_csv_and_console_outputs_are_separate() {
            "CSV-Kopfzeile fehlt.");
     expect(csv_contents.find("\"model_id\",\"487\"") != std::string::npos,
            "CSV-Messwert fehlt.");
+    expect(csv_contents.find("\"text_value\",\"AB\"") != std::string::npos,
+           "CSV-Textwert enthaelt ein ungueltiges NUL-Zeichen.");
+    expect(csv_contents.find('\0') == std::string::npos,
+           "CSV-Ausgabe enthaelt ein NUL-Zeichen.");
     expect(console_stream.str().find("Modell-ID") != std::string::npos,
            "Konsolenwert fehlt.");
     expect(console_stream.str().find("pv_10_voltage") != std::string::npos,
@@ -145,6 +151,7 @@ void test_hourly_rotation_and_same_hour_append() {
     const std::string next_hour = "2026-10-23T09:00:00Z";
     const auto first_file = hourly_path(base, first_hour);
     const auto second_file = hourly_path(base, next_hour);
+    std::vector<std::string> archived_files;
 
     {
         sun2000::CsvWriter csv(base.string());
@@ -152,11 +159,16 @@ void test_hourly_rotation_and_same_hour_append() {
         csv.flush();
     }
     {
-        sun2000::CsvWriter csv(base.string());
+        sun2000::CsvWriter csv(
+            base.string(), [&archived_files](const std::string& previous_file) {
+                archived_files.push_back(previous_file);
+            });
         csv.write("2026-10-23T08:45:00Z", "active_power", "20", "W");
         csv.write(next_hour, "active_power", "30", "W");
         csv.flush();
     }
+    expect(archived_files == std::vector<std::string>{first_file.string()},
+           "Beim Stundenwechsel wurde nicht genau die vorherige CSV gemeldet.");
 
     std::ifstream first_stream(first_file);
     const std::string first_contents(
@@ -180,6 +192,70 @@ void test_hourly_rotation_and_same_hour_append() {
     expect(std::distance(std::filesystem::directory_iterator(directory),
                          std::filesystem::directory_iterator()) == 2,
            "Es wurden unerwartete Stunden-Dateien angelegt.");
+    std::filesystem::remove_all(directory);
+}
+
+void test_csv_first_open_archives_existing_previous_hour() {
+    const auto unique_suffix =
+        std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto directory = std::filesystem::temp_directory_path() /
+                           ("sun2000-archive-start-test-" +
+                            std::to_string(unique_suffix));
+    std::filesystem::create_directories(directory);
+    const auto base = directory / "plant.csv";
+    const std::string previous_timestamp = "2026-10-23T08:00:00Z";
+    const std::string current_timestamp = "2026-10-23T09:00:00Z";
+    const auto previous_file = hourly_path(base, previous_timestamp);
+    std::vector<std::string> archived_files;
+
+    {
+        sun2000::CsvWriter csv(base.string());
+        csv.write(previous_timestamp, "active_power", "100", "W");
+        csv.flush();
+    }
+    {
+        sun2000::CsvWriter csv(
+            base.string(), [&archived_files](const std::string& previous_path) {
+                archived_files.push_back(previous_path);
+            });
+        csv.write(current_timestamp, "active_power", "200", "W");
+        csv.flush();
+    }
+    expect(archived_files == std::vector<std::string>{previous_file.string()},
+           "Erster Stundenstart hat die vorherige Datei nicht gemeldet.");
+    std::filesystem::remove_all(directory);
+}
+
+void test_failed_archive_prevents_opening_next_hour_file() {
+    const auto unique_suffix =
+        std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto directory = std::filesystem::temp_directory_path() /
+                           ("sun2000-archive-failure-test-" +
+                            std::to_string(unique_suffix));
+    std::filesystem::create_directories(directory);
+    const auto base = directory / "plant.csv";
+    const std::string first_hour = "2026-10-23T08:00:00Z";
+    const std::string next_hour = "2026-10-23T09:00:00Z";
+    const auto next_file = hourly_path(base, next_hour);
+    {
+        sun2000::CsvWriter csv(base.string());
+        csv.write(first_hour, "active_power", "100", "W");
+        csv.flush();
+    }
+
+    bool archive_failed = false;
+    try {
+        sun2000::CsvWriter csv(
+            base.string(), [](const std::string&) {
+                throw std::runtime_error("Simulierter Archivfehler.");
+            });
+        csv.write(next_hour, "active_power", "200", "W");
+    } catch (const std::runtime_error&) {
+        archive_failed = true;
+    }
+    expect(archive_failed, "Archivfehler wurde nicht weitergereicht.");
+    expect(!std::filesystem::exists(next_file),
+           "Neue Stunden-Datei wurde trotz Archivfehler angelegt.");
     std::filesystem::remove_all(directory);
 }
 
@@ -236,5 +312,7 @@ int main() {
     test_all_console_output_includes_unfiltered_values();
     test_summary_suppresses_register_diagnostics();
     test_hourly_rotation_and_same_hour_append();
+    test_csv_first_open_archives_existing_previous_hour();
+    test_failed_archive_prevents_opening_next_hour_file();
     test_hourly_retention_keeps_current_and_previous_23_hours();
 }

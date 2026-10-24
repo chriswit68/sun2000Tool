@@ -4,7 +4,7 @@ import Foundation
 public enum PollingState: Equatable {
     case idle
     case polling
-    case updated(Date)
+    case updated(Date, skippedCorruptRows: Int)
     case failed(String)
 }
 
@@ -31,8 +31,10 @@ public final class PollingService: ObservableObject {
             return "Noch keine CSV-Datei eingelesen."
         case .polling:
             return "CSV-Datei wird eingelesen …"
-        case .updated(let date):
-            return "Zuletzt aktualisiert: \(date.formatted(date: .omitted, time: .shortened))"
+        case .updated(let date, let skippedCorruptRows):
+            let updated = "Zuletzt aktualisiert: \(date.formatted(date: .omitted, time: .shortened))"
+            guard skippedCorruptRows > 0 else { return updated }
+            return "\(updated) – \(skippedCorruptRows) beschaedigte CSV-Zeile(n) mit NUL-Zeichen ignoriert."
         case .failed(let message):
             return message
         }
@@ -75,9 +77,9 @@ public final class PollingService: ObservableObject {
         isPolling = false
 
         switch result {
-        case .success(let latestValues):
-            values = latestValues
-            state = .updated(Date())
+        case .success(let sample):
+            values = sample.values
+            state = .updated(Date(), skippedCorruptRows: sample.skippedCorruptRows)
         case .failure(let message):
             state = .failed(message)
         }
@@ -85,7 +87,7 @@ public final class PollingService: ObservableObject {
 }
 
 private enum PollResult: Sendable {
-    case success([TelemetryValue])
+    case success(TelemetryCSVSample)
     case failure(String)
 }
 
@@ -97,11 +99,13 @@ private func executePoll(csvBaseURL: URL) -> PollResult {
             return .failure("Keine Stunden-CSV zur konfigurierten Basisdatei gefunden.")
         }
         let contents = try String(contentsOf: csvURL, encoding: .utf8)
-        let values = try TelemetryCSVParser.latestSample(from: contents)
-        guard !values.isEmpty else {
+        let sample = try TelemetryCSVParser.latestSampleWithDiagnostics(
+            from: contents
+        )
+        guard !sample.values.isEmpty else {
             return .failure("Die neueste Stunden-CSV enthaelt noch keine Messwerte.")
         }
-        return .success(values)
+        return .success(sample)
     } catch {
         return .failure("CSV-Datei konnte nicht eingelesen werden: \(error.localizedDescription)")
     }

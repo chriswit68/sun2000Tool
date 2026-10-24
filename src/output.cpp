@@ -19,6 +19,9 @@ namespace {
 std::string csv_escape(const std::string& value) {
     std::string escaped = "\"";
     for (const char character : value) {
+        if (character == '\0') {
+            continue;
+        }
         if (character == '"') {
             escaped += "\"\"";
         } else {
@@ -88,6 +91,17 @@ std::time_t parse_hour_key(const std::string& hour_key) {
     }
     parsed.tm_isdst = 0;
     return timegm(&parsed);
+}
+
+std::string previous_hour_key(const std::string& hour_key) {
+    const std::time_t previous_hour = parse_hour_key(hour_key) - 60 * 60;
+    std::tm utc_time{};
+    if (gmtime_r(&previous_hour, &utc_time) == nullptr) {
+        throw std::runtime_error("Vorherige UTC-Stunde kann nicht berechnet werden.");
+    }
+    std::ostringstream formatted;
+    formatted << std::put_time(&utc_time, "%Y-%m-%dT%H");
+    return formatted.str();
 }
 
 std::filesystem::path hourly_file_path(const std::string& base_path,
@@ -290,7 +304,8 @@ bool is_valid_summary_value(const std::string& signal,
 
 }  // namespace
 
-CsvWriter::CsvWriter(const std::string& path) : base_path_(path) {
+CsvWriter::CsvWriter(const std::string& path, BeforeHourOpen before_hour_open)
+    : base_path_(path), before_hour_open_(std::move(before_hour_open)) {
     if (base_path_.empty() || std::filesystem::path(base_path_).filename().empty()) {
         throw std::invalid_argument("CSV-Basispfad muss einen Dateinamen enthalten.");
     }
@@ -298,7 +313,19 @@ CsvWriter::CsvWriter(const std::string& path) : base_path_(path) {
 
 void CsvWriter::open_hour(const std::string& hour_key) {
     if (stream_.is_open()) {
+        stream_.flush();
+        if (!stream_) {
+            throw std::runtime_error("Vor Stundenwechsel konnte CSV nicht geschrieben werden.");
+        }
         stream_.close();
+    }
+    if (before_hour_open_) {
+        const std::string hour_to_archive =
+            active_hour_.empty() ? previous_hour_key(hour_key) : active_hour_;
+        const auto previous_path = hourly_file_path(base_path_, hour_to_archive);
+        if (std::filesystem::is_regular_file(previous_path)) {
+            before_hour_open_(previous_path.string());
+        }
     }
     const auto path = hourly_file_path(base_path_, hour_key);
     const bool needs_header =
