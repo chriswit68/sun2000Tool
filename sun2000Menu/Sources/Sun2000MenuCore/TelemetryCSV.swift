@@ -154,6 +154,149 @@ public enum TelemetrySignalCatalog {
             .joined(separator: " ")
     }
 
+    public static func description(for signal: String) -> String {
+        let descriptions = [
+            "active_power": "Momentane Wirkleistung, die der Wechselrichter ins Hausnetz oder Stromnetz abgibt. Negative Werte koennen je nach Betriebsart einen Leistungsfluss in die Gegenrichtung anzeigen.",
+            "active_power_fast": "Schnell erfasste momentane Wirkleistung des Wechselrichters.",
+            "accumulated_yield_energy": "Gesamte vom Wechselrichter erzeugte Energie seit Beginn des Energiezaehlers.",
+            "battery_bus_current": "Momentane Stromstaerke am gemeinsamen Batterieanschluss.",
+            "battery_bus_voltage": "Momentane Spannung am gemeinsamen Batterieanschluss.",
+            "battery_daily_charge_energy": "Energie, die der Batteriespeicher heute insgesamt aufgenommen hat.",
+            "battery_daily_discharge_energy": "Energie, die der Batteriespeicher heute insgesamt abgegeben hat.",
+            "battery_power": "Momentane Lade- oder Entladeleistung des gesamten Batteriespeichers. Das Vorzeichen zeigt die Richtung gemaess Geraetekonvention.",
+            "battery_rated_capacity": "Nennkapazitaet des Batteriespeichers in Wattstunden.",
+            "battery_soc": "Ladezustand des gesamten Batteriespeichers in Prozent.",
+            "battery_status": "Numerischer Gesamtstatus des Batteriespeichers. Die Zahl ist ein Geraetecode und muss fuer eine genaue Bedeutung anhand der passenden Registerliste entschluesselt werden.",
+            "battery_total_charge": "Vom Batteriespeicher insgesamt aufgenommene Energie seit Beginn des Zaehlers.",
+            "battery_total_discharge": "Vom Batteriespeicher insgesamt abgegebene Energie seit Beginn des Zaehlers.",
+            "daily_yield_energy": "Energie, die der Wechselrichter seit Mitternacht erzeugt hat.",
+            "device_status": "Numerischer Betriebszustand des Wechselrichters. Die Zahl ist ein Geraetecode, kein direkt lesbarer Text.",
+            "efficiency": "Vom Wechselrichter gemeldeter Wirkungsgrad: welcher Anteil der aufgenommenen Energie als nutzbare Leistung herauskommt.",
+            "fault_code": "Numerischer Fehlercode des Wechselrichters. Auch der Wert 0 ist meist ein gueltiger Code und bedeutet typischerweise, dass kein Fehler gemeldet wird.",
+            "firmware_version": "Versionskennung der Wechselrichter-Firmware.",
+            "grid_frequency": "Frequenz des Stromnetzes, in Deutschland normalerweise nahe 50 Hertz.",
+            "input_power": "Momentane gesamte Leistung, die der Wechselrichter von den Solarmodulen auf der Gleichstromseite aufnimmt.",
+            "internal_temperature": "Vom Wechselrichter gemeldete interne Temperatur.",
+            "insulation_resistance": "Messwert fuer den Isolationswiderstand der Gleichstromseite; dient der elektrischen Sicherheitsueberwachung.",
+            "model_id": "Numerische Kennung des Wechselrichtermodells. Sie ist nicht selbst der lesbare Modellname.",
+            "model_name": "Lesbare Modellbezeichnung des Wechselrichters.",
+            "model_name_individual": "Modellbezeichnung aus einem alternativen Zugriff auf einzelne Register.",
+            "mppt_count": "Anzahl der unabhaengigen Regler, die die Solarmodule auf ihren jeweils besten Arbeitspunkt einstellen.",
+            "monthly_yield_energy": "Energie, die der Wechselrichter seit Beginn des aktuellen Monats erzeugt hat.",
+            "power_factor": "Leistungsfaktor: beschreibt, wie wirksam Strom und Spannung zusammen elektrische Leistung uebertragen. Nahe 1 bedeutet ublicherweise einen hohen Wirkleistungsanteil.",
+            "product_code": "Produkt- oder Ausfuehrungskennung des Wechselrichters.",
+            "product_sales_area": "Kennung der Verkaufsregion, fuer die das Produkt vorgesehen ist.",
+            "reactive_power": "Blindleistung. Sie pendelt zwischen Geraet und Stromnetz und unterstuetzt unter anderem die Netzspannungsregelung.",
+            "serial_number": "Eindeutige Seriennummer des Wechselrichters.",
+            "software_version": "Versionskennung der Wechselrichter-Software.",
+            "startup_time": "Zeitpunkt des letzten Starts des Wechselrichters, als Sekundenwert und zusaetzlich lesbare UTC-Zeit.",
+            "shutdown_time": "Zeitpunkt des letzten Stopps des Wechselrichters. Ein Platzhalter kann bedeuten, dass kein gueltiger Zeitpunkt vorliegt.",
+            "total_dc_input_energy": "Gesamte Energie, die der Wechselrichter auf der PV-Gleichstromseite aufgenommen hat.",
+            "yearly_yield_energy": "Energie, die der Wechselrichter seit Beginn des aktuellen Jahres erzeugt hat."
+        ]
+        if let description = descriptions[signal] {
+            return description
+        }
+
+        if signal.hasPrefix("pv_") {
+            if signal.hasSuffix("_voltage") {
+                return "Momentane Gleichspannung des PV-Strings. Ein String ist eine Reihe miteinander verbundener Solarmodule."
+            }
+            if signal.hasSuffix("_current") {
+                return "Momentane Stromstaerke dieses PV-Strings. 0 A kann ein gueltiger Wert sein, wenn gerade kein Strom fliesst."
+            }
+        }
+
+        if signal.hasPrefix("phase_voltage_") {
+            return "Spannung einer einzelnen Netzphase (A, B oder C) gegen den Neutralleiter."
+        }
+        if signal.hasPrefix("phase_current_") {
+            return "Momentane Stromstaerke auf der angegebenen Netzphase (A, B oder C)."
+        }
+        if signal.hasPrefix("line_voltage_") {
+            return "Spannung zwischen den beiden im Signalnamen genannten Netzphasen."
+        }
+        if signal.hasPrefix("battery_unit_") {
+            if signal.hasSuffix("_serial_number") {
+                return "Eindeutige Seriennummer dieser Batterieeinheit."
+            }
+            if signal.hasSuffix("_soc") {
+                return "Ladezustand dieser Batterieeinheit in Prozent."
+            }
+            if signal.hasSuffix("_power") {
+                return "Momentane Lade- oder Entladeleistung dieser Batterieeinheit. Das Vorzeichen folgt der Geraetekonvention."
+            }
+            if signal.hasSuffix("_bus_voltage") {
+                return "Momentane Spannung am Anschluss dieser Batterieeinheit."
+            }
+            if signal.hasSuffix("_bus_current") {
+                return "Momentane Stromstaerke am Anschluss dieser Batterieeinheit."
+            }
+            if signal.hasSuffix("_temperature") {
+                return "Temperaturmesswert dieser Batterieeinheit."
+            }
+            if signal.contains("_daily_charge_energy") {
+                return "Energie, die diese Batterieeinheit heute aufgenommen hat."
+            }
+            if signal.contains("_daily_discharge_energy") {
+                return "Energie, die diese Batterieeinheit heute abgegeben hat."
+            }
+            if signal.contains("_total_charge") {
+                return "Gesamtenergie, die diese Batterieeinheit seit Beginn des Zaehlers aufgenommen hat."
+            }
+            if signal.contains("_total_discharge") {
+                return "Gesamtenergie, die diese Batterieeinheit seit Beginn des Zaehlers abgegeben hat."
+            }
+            if signal.contains("_version") {
+                return "Software- oder Firmware-Version einer Baugruppe dieser Batterieeinheit."
+            }
+            if signal.contains("_status") || signal.contains("_fault_id") ||
+                signal.contains("_working_mode") {
+                return "Numerischer Status-, Fehler- oder Betriebsmodus dieser Batterieeinheit. Die genaue Bedeutung haengt vom Geraetecode ab."
+            }
+            if signal.contains("_rated_") || signal.contains("_maximum_") {
+                return "Nenn- oder Grenzwert der Lade- beziehungsweise Entladeleistung; dies ist nicht die aktuelle Leistung."
+            }
+            if signal.contains("_soh_calibration_status") {
+                return "Status der SOH-Kalibrierung dieses Batterie-Packs. SOH ist eine Schaetzung des Batteriezustands."
+            }
+        }
+
+        if signal.hasSuffix("_temperature") ||
+            signal.range(of: #"^internal_temperature_[0-9]+$"#,
+                         options: .regularExpression) != nil {
+            return "Temperaturmesswert eines internen Messpunkts des Wechselrichters oder Speichers."
+        }
+        if signal.contains("alarm") || signal.hasSuffix("_status") ||
+            signal.hasSuffix("_flags") || signal.contains("bitfield") {
+            return "Status- oder Alarmwert. Bei einem Bitfeld enthaelt die Zahl mehrere einzelne Ein/Aus-Informationen; die Bits muessen anhand der Registerliste interpretiert werden."
+        }
+        if signal.hasSuffix("_time") || signal.hasSuffix("_time_utc") {
+            return "Zeitmarke eines Betriebs- oder Statistikereignisses. UTC-Zeitfelder sind lesbar formatiert; bei Rohwerten handelt es sich um Sekunden seit einem Zeitursprung."
+        }
+        if signal.contains("_energy") || signal.contains("_yield_energy") {
+            return "Energiemenge fuer den im Signalnamen genannten Zeitraum oder Zaehler."
+        }
+        if signal.hasSuffix("_voltage") {
+            return "Spannungsmesswert. Der Signalname benennt den gemessenen Stromkreis oder Messpunkt."
+        }
+        if signal.hasSuffix("_current") {
+            return "Stromstaerkemesswert. Der Signalname benennt den gemessenen Stromkreis oder Messpunkt."
+        }
+        if signal.contains("power") {
+            return "Leistungswert oder Leistungsgrenze des Wechselrichters. Grenzwerte sind keine momentanen Messwerte."
+        }
+        if signal.contains("version") {
+            return "Versionskennung einer Geraetesoftware oder internen Baugruppe."
+        }
+        if signal.contains("alarm") || signal.contains("status") ||
+            signal.contains("flags") || signal.hasSuffix("_code") ||
+            signal.hasSuffix("_id") {
+            return "Numerischer Status-, Alarm- oder Kennwert. Die konkrete Bedeutung ergibt sich aus der passenden Registerliste."
+        }
+        return "Technischer Diagnose- oder Messwert. Die genaue Bedeutung haengt von der Geraete- und Firmwareversion ab."
+    }
+
     public static func shortLabel(for signal: String) -> String {
         let labels = [
             "active_power": "P",

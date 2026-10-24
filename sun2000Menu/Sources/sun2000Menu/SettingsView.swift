@@ -63,6 +63,7 @@ struct SettingsView: View {
                                 TelemetrySignalCatalog.label(for: signal),
                                 isOn: selectionBinding(for: signal)
                             )
+                            .help(TelemetrySignalCatalog.description(for: signal))
                         }
                     }
                 }

@@ -43,6 +43,25 @@ final class TelemetryCSVTests: XCTestCase {
         )
     }
 
+    func testSignalDescriptionsCoverSpecificAndPatternBasedSignals() {
+        XCTAssertTrue(
+            TelemetrySignalCatalog.description(for: "active_power")
+                .contains("Wirkleistung")
+        )
+        XCTAssertTrue(
+            TelemetrySignalCatalog.description(for: "pv_6_current")
+                .contains("PV-String")
+        )
+        XCTAssertTrue(
+            TelemetrySignalCatalog.description(for: "battery_unit_2_temperature")
+                .contains("Temperatur")
+        )
+        XCTAssertFalse(
+            TelemetrySignalCatalog.description(for: "external_alarm_group_12")
+                .isEmpty
+        )
+    }
+
     func testCurrentValuesUseOneDecimalOnlyInMenuBar() {
         let pvCurrent = TelemetryValue(
             timestamp: "",
