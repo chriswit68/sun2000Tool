@@ -29,7 +29,8 @@ services:
     environment:
       PGPASSWORD: "${PGPASSWORD:?Set PGPASSWORD}"
     volumes:
-      - ./data:/data
+      #- ./data:/data
+      - "${DATA_PATH:?Set DATA_PATH}:/data"
     logging:
       driver: json-file
       options:
