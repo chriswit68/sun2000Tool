@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.10)
 project(sun2000Tool)
 
+# C++17 wird u. a. fuer inline constexpr, verschachtelte Namespaces,
+# std::optional, std::filesystem und Template Argument Deduction verwendet.
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -42,4 +44,10 @@ if(BUILD_TESTING)
 		${CMAKE_CURRENT_SOURCE_DIR}/src)
 	target_compile_options(sun2000Tool-Output-Tests PRIVATE -Wall -Wextra)
 	add_test(NAME sun2000Tool-Output-Tests COMMAND sun2000Tool-Output-Tests)
+
+	add_executable(sun2000Tool-Register-Tests tests/register_decoder_tests.cpp)
+	target_include_directories(sun2000Tool-Register-Tests PRIVATE
+		${CMAKE_CURRENT_SOURCE_DIR}/src)
+	target_compile_options(sun2000Tool-Register-Tests PRIVATE -Wall -Wextra)
+	add_test(NAME sun2000Tool-Register-Tests COMMAND sun2000Tool-Register-Tests)
 endif()

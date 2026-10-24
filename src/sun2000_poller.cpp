@@ -1,6 +1,7 @@
 #include "sun2000_poller.hpp"
 
 #include "modbus_client.hpp"
+#include "register_decoder.hpp"
 #include "register_map.hpp"
 
 #include <algorithm>
@@ -8,8 +9,8 @@
 #include <cstdint>
 #include <ctime>
 #include <iomanip>
-#include <iostream>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
@@ -20,13 +21,6 @@
 namespace sun2000 {
 namespace {
 
-enum class RegisterFormat {
-    unsigned16,
-    signed16,
-    unsigned32,
-    signed32
-};
-
 struct Metric {
     std::string name;
     std::string unit;
@@ -35,6 +29,68 @@ struct Metric {
     double scale;
     bool epoch_timestamp{};
 };
+
+struct StringMetric {
+    const char* signal;
+    const char* label;
+    int address;
+    int register_count;
+};
+
+// Zentrale Liste der festen Stringregister: Signalname, Konsolenlabel,
+// Startadresse und Registerlaenge bleiben so pro Messwert zusammen.
+const std::array<StringMetric, 19> string_metrics{{
+    {"serial_number", "Seriennummer", registers::inverter_serial_number,
+     registers::inverter_serial_number_register_count},
+    {"product_code", "Produktcode", registers::inverter_product_code,
+     registers::inverter_product_code_register_count},
+    {"firmware_version", "Firmware", registers::inverter_firmware_version,
+     registers::inverter_firmware_version_register_count},
+    {"software_version", "Softwareversion",
+     registers::inverter_software_version,
+     registers::inverter_software_version_register_count},
+    {"product_sales_area", "Produkt-Verkaufsregion",
+     registers::inverter_product_sales_area,
+     registers::inverter_product_sales_area_register_count},
+    {"third_party_serial_number", "Drittanbieter-Seriennummer",
+     registers::inverter_third_party_serial_number,
+     registers::inverter_third_party_serial_number_register_count},
+    {"hardware_version", "Hardwareversion", registers::inverter_hardware_version,
+     registers::inverter_hardware_version_register_count},
+    {"monitoring_board_serial_number", "Seriennummer Monitoring-Platine",
+     registers::inverter_monitoring_board_serial_number,
+     registers::inverter_monitoring_board_serial_number_register_count},
+    {"monitoring_software_version", "Monitoring-Softwareversion",
+     registers::inverter_monitoring_software_version,
+     registers::inverter_monitoring_software_version_register_count},
+    {"main_dsp_version", "Haupt-DSP-Version", registers::inverter_main_dsp_version,
+     registers::inverter_main_dsp_version_register_count},
+    {"cpld_version", "CPLD-Version", registers::inverter_cpld_version,
+     registers::inverter_cpld_version_register_count},
+    {"afci_version", "AFCI-Version", registers::inverter_afci_version,
+     registers::inverter_afci_version_register_count},
+    {"registration_code", "Registrierungscode",
+     registers::inverter_registration_code,
+     registers::inverter_registration_code_register_count},
+    {"battery_unit_1_dcdc_version", "Batterie DCDC-Version",
+     registers::battery_unit_1_dcdc_version,
+     registers::battery_unit_1_dcdc_version_register_count},
+    {"battery_unit_1_bms_version", "Batterie BMS-Version",
+     registers::battery_unit_1_bms_version,
+     registers::battery_unit_1_bms_version_register_count},
+    {"battery_unit_1_serial_number", "Batterie 1 Seriennummer",
+     registers::battery_unit_1_serial_number,
+     registers::battery_unit_1_serial_number_register_count},
+    {"battery_unit_2_serial_number", "Batterie 2 Seriennummer",
+     registers::battery_unit_2_serial_number,
+     registers::battery_unit_2_serial_number_register_count},
+    {"battery_unit_2_software_version", "Batterie 2 Softwareversion",
+     registers::battery_unit_2_software_version,
+     registers::battery_unit_2_software_version_register_count},
+    {"battery_unit_1_software_version", "Batterie 1 Softwareversion",
+     registers::battery_unit_1_software_version,
+     registers::battery_unit_1_software_version_register_count},
+}};
 
 std::string timestamp_utc() {
     const std::time_t current_time = std::time(nullptr);
@@ -46,6 +102,8 @@ std::string timestamp_utc() {
 }
 
 std::optional<std::string> format_epoch_utc(std::uint32_t epoch_seconds) {
+    // std::optional (C++17) signalisiert, dass Sentinel- oder nicht
+    // darstellbare Zeitwerte kein formatiertes Datum liefern.
     if (epoch_seconds == 0 ||
         epoch_seconds == std::numeric_limits<std::uint32_t>::max()) {
         return std::nullopt;
@@ -60,13 +118,6 @@ std::optional<std::string> format_epoch_utc(std::uint32_t epoch_seconds) {
     std::ostringstream formatted;
     formatted << std::put_time(&utc_time, "%Y-%m-%dT%H:%M:%SZ");
     return formatted.str();
-}
-
-std::int32_t decode_signed32(std::uint32_t raw) {
-    const std::int64_t value =
-        raw <= 0x7FFFFFFFu ? static_cast<std::int64_t>(raw)
-                           : static_cast<std::int64_t>(raw) - 0x100000000LL;
-    return static_cast<std::int32_t>(value);
 }
 
 void report_value(const std::string& timestamp, const std::string& signal,
@@ -95,43 +146,12 @@ void read_and_report_metric(ModbusClient& client, const Metric& metric,
         return;
     }
 
-    double value = 0;
-    switch (metric.format) {
-        case RegisterFormat::unsigned16:
-            if (registers[0] == 0x7FFF) {
-                return;
-            }
-            value = registers[0];
-            break;
-        case RegisterFormat::signed16: {
-            const auto signed_value = static_cast<std::int16_t>(registers[0]);
-            if (registers[0] == 0x7FFF || registers[0] == 0x8000) {
-                return;
-            }
-            value = signed_value;
-            break;
-        }
-        case RegisterFormat::unsigned32: {
-            const std::uint32_t raw =
-                (static_cast<std::uint32_t>(registers[0]) << 16) | registers[1];
-            if (raw == 0x7FFFFFFF) {
-                return;
-            }
-            value = raw;
-            break;
-        }
-        case RegisterFormat::signed32: {
-            const std::uint32_t raw =
-                (static_cast<std::uint32_t>(registers[0]) << 16) | registers[1];
-            if (raw == 0x7FFFFFFF || raw == 0x80000000) {
-                return;
-            }
-            value = decode_signed32(raw);
-            break;
-        }
+    const auto decoded =
+        decode_register_value(registers, metric.format, metric.scale);
+    if (!decoded) {
+        return;
     }
-
-    value /= metric.scale;
+    const double value = *decoded;
     std::ostringstream formatted;
     formatted << std::fixed << std::setprecision(6) << value;
     report_value(timestamp, metric.name, metric.name, formatted.str(),
@@ -154,13 +174,15 @@ void read_and_report_string(ModbusClient& client, int address,
                             const std::string& label,
                             const std::string& timestamp, CsvWriter* csv,
                             ConsoleReporter& console) {
+    std::string value;
     try {
-        const std::string value = client.read_string(address, register_count);
-        if (!value.empty()) {
-            report_value(timestamp, signal, label, value, "", csv, console);
-        }
+        value = client.read_string(address, register_count);
     } catch (const std::exception& error) {
         console.diagnostic(error.what());
+        return;
+    }
+    if (!value.empty()) {
+        report_value(timestamp, signal, label, value, "", csv, console);
     }
 }
 
@@ -170,149 +192,80 @@ Sun2000Poller::Sun2000Poller(PollConnection connection, CsvWriter* csv,
                              ConsoleReporter& console)
     : connection_(std::move(connection)), csv_(csv), console_(console) {}
 
-bool Sun2000Poller::poll_once() {
+PollResult Sun2000Poller::poll_once() {
+    PollResult result;
+    std::unique_ptr<ModbusClient> client_owner;
     try {
-        ModbusClient client(connection_.host, connection_.port,
-                            connection_.unit_id);
+        client_owner = std::make_unique<ModbusClient>(
+            connection_.host, connection_.port, connection_.unit_id);
+        ModbusClient& client = *client_owner;
+        result.connected = true;
         const std::string timestamp = timestamp_utc();
         console_.begin_poll(timestamp);
 
         console_.section("Identifikation");
+        std::string model;
+        bool model_read_individually = false;
         try {
-            const std::string model =
-                client.read_string(registers::inverter_model_name,
-                                   registers::inverter_model_name_register_count);
-            if (!model.empty()) {
-                report_value(timestamp, "model_name", "Modell", model, "", csv_,
-                             console_);
-            }
+            model = client.read_string(
+                registers::inverter_model_name,
+                registers::inverter_model_name_register_count);
         } catch (const std::exception& error) {
             console_.diagnostic("Modell (Blockzugriff): " +
                                 std::string(error.what()));
             try {
-                const std::string model =
-                    client.read_string_register_by_register(
-                        registers::inverter_model_name,
-                        registers::inverter_model_name_register_count);
-                if (!model.empty()) {
-                    report_value(timestamp, "model_name_individual",
-                                 "Modell (Einzelregister)", model, "", csv_,
-                                 console_);
-                } else {
-                    console_.diagnostic(
-                        "Modell (Einzelregister): leere Antwort");
+                model = client.read_string_register_by_register(
+                    registers::inverter_model_name,
+                    registers::inverter_model_name_register_count);
+                model_read_individually = true;
+                if (model.empty()) {
+                    console_.diagnostic("Modell (Einzelregister): leere Antwort");
                 }
             } catch (const std::exception& individual_error) {
                 console_.diagnostic("Modell (Einzelregister): " +
                                     std::string(individual_error.what()));
             }
         }
-        read_and_report_string(
-            client, registers::inverter_serial_number,
-            registers::inverter_serial_number_register_count, "serial_number",
-            "Seriennummer", timestamp, csv_, console_);
-        read_and_report_string(
-            client, registers::inverter_product_code,
-            registers::inverter_product_code_register_count, "product_code",
-            "Produktcode", timestamp, csv_, console_);
-        read_and_report_string(
-            client, registers::inverter_firmware_version,
-            registers::inverter_firmware_version_register_count,
-            "firmware_version", "Firmware", timestamp, csv_, console_);
-        read_and_report_string(
-            client, registers::inverter_software_version,
-            registers::inverter_software_version_register_count,
-            "software_version", "Softwareversion", timestamp, csv_, console_);
-        read_and_report_string(
-            client, registers::inverter_product_sales_area,
-            registers::inverter_product_sales_area_register_count,
-            "product_sales_area", "Produkt-Verkaufsregion", timestamp, csv_,
-            console_);
-        read_and_report_string(
-            client, registers::inverter_third_party_serial_number,
-            registers::inverter_third_party_serial_number_register_count,
-            "third_party_serial_number", "Drittanbieter-Seriennummer",
-            timestamp, csv_, console_);
-        read_and_report_string(
-            client, registers::inverter_hardware_version,
-            registers::inverter_hardware_version_register_count,
-            "hardware_version", "Hardwareversion", timestamp, csv_, console_);
-        read_and_report_string(
-            client, registers::inverter_monitoring_board_serial_number,
-            registers::inverter_monitoring_board_serial_number_register_count,
-            "monitoring_board_serial_number",
-            "Seriennummer Monitoring-Platine", timestamp, csv_, console_);
-        read_and_report_string(
-            client, registers::inverter_monitoring_software_version,
-            registers::inverter_monitoring_software_version_register_count,
-            "monitoring_software_version", "Monitoring-Softwareversion",
-            timestamp, csv_, console_);
-        read_and_report_string(
-            client, registers::inverter_main_dsp_version,
-            registers::inverter_main_dsp_version_register_count,
-            "main_dsp_version", "Haupt-DSP-Version", timestamp, csv_, console_);
-        read_and_report_string(
-            client, registers::inverter_cpld_version,
-            registers::inverter_cpld_version_register_count, "cpld_version",
-            "CPLD-Version", timestamp, csv_, console_);
-        read_and_report_string(
-            client, registers::inverter_afci_version,
-            registers::inverter_afci_version_register_count, "afci_version",
-            "AFCI-Version", timestamp, csv_, console_);
-        read_and_report_string(
-            client, registers::inverter_registration_code,
-            registers::inverter_registration_code_register_count,
-            "registration_code", "Registrierungscode", timestamp, csv_,
-            console_);
-        read_and_report_string(
-            client, registers::battery_unit_1_dcdc_version,
-            registers::battery_unit_1_dcdc_version_register_count,
-            "battery_unit_1_dcdc_version", "Batterie DCDC-Version",
-            timestamp, csv_, console_);
-        read_and_report_string(
-            client, registers::battery_unit_1_bms_version,
-            registers::battery_unit_1_bms_version_register_count,
-            "battery_unit_1_bms_version", "Batterie BMS-Version", timestamp,
-            csv_, console_);
-        read_and_report_string(
-            client, registers::battery_unit_1_serial_number,
-            registers::battery_unit_1_serial_number_register_count,
-            "battery_unit_1_serial_number", "Batterie 1 Seriennummer",
-            timestamp, csv_, console_);
-        read_and_report_string(
-            client, registers::battery_unit_2_serial_number,
-            registers::battery_unit_2_serial_number_register_count,
-            "battery_unit_2_serial_number", "Batterie 2 Seriennummer",
-            timestamp, csv_, console_);
-        read_and_report_string(
-            client, registers::battery_unit_2_software_version,
-            registers::battery_unit_2_software_version_register_count,
-            "battery_unit_2_software_version", "Batterie 2 Softwareversion",
-            timestamp, csv_, console_);
-        read_and_report_string(
-            client, registers::battery_unit_1_software_version,
-            registers::battery_unit_1_software_version_register_count,
-            "battery_unit_1_software_version", "Batterie 1 Softwareversion",
-            timestamp, csv_, console_);
+        if (!model.empty()) {
+            const std::string signal =
+                model_read_individually ? "model_name_individual" : "model_name";
+            const std::string label = model_read_individually
+                                          ? "Modell (Einzelregister)"
+                                          : "Modell";
+            report_value(timestamp, signal, label, model, "", csv_, console_);
+        }
+        for (const auto& metric : string_metrics) {
+            read_and_report_string(client, metric.address, metric.register_count,
+                                   metric.signal, metric.label, timestamp, csv_,
+                                   console_);
+        }
 
+        std::optional<std::uint16_t> model_id;
         try {
-            const auto model_id =
+            model_id =
                 client.read_holding_registers(registers::inverter_model_id, 1)[0];
-            const std::string value = std::to_string(model_id);
-            report_value(timestamp, "model_id", "Modell-ID", value, "", csv_,
-                         console_);
         } catch (const std::exception& error) {
             console_.diagnostic("Modell-ID: " + std::string(error.what()));
         }
+        if (model_id) {
+            report_value(timestamp, "model_id", "Modell-ID",
+                         std::to_string(*model_id), "", csv_, console_);
+        }
 
         console_.section("PV-Eingaenge");
+        std::optional<std::uint16_t> pv_string_count;
         try {
-            const auto pv_string_count =
+            pv_string_count =
                 client.read_holding_registers(registers::inverter_pv_string_count,
                                               1)[0];
+        } catch (const std::exception& error) {
+            console_.diagnostic("PV-String-Anzahl: " +
+                                std::string(error.what()));
+        }
+        if (pv_string_count) {
             const auto bounded_count =
                 std::min<std::uint16_t>(
-                    pv_string_count,
+                    *pv_string_count,
                     registers::maximum_pv_strings_in_register_map);
             for (std::uint16_t index = 0; index < bounded_count; ++index) {
                 const int address =
@@ -331,9 +284,6 @@ bool Sun2000Poller::poll_once() {
                      RegisterFormat::signed16, 100},
                     timestamp, csv_, console_);
             }
-        } catch (const std::exception& error) {
-            console_.diagnostic("PV-String-Anzahl: " +
-                                std::string(error.what()));
         }
 
         static const std::array<Metric, 23> inverter_metrics{{
@@ -394,7 +344,7 @@ bool Sun2000Poller::poll_once() {
             read_and_report_metric(client, metric, timestamp, csv_, console_);
         }
 
-        const std::vector<Metric> additional_inverter_metrics{
+        static const std::vector<Metric> additional_inverter_metrics{
             {"mppt_count", "", registers::inverter_mppt_count,
              RegisterFormat::unsigned16, 1},
             {"rated_power", "kW", registers::inverter_rated_power,
@@ -663,16 +613,23 @@ bool Sun2000Poller::poll_once() {
         for (const auto& metric : additional_inverter_metrics) {
             read_and_report_metric(client, metric, timestamp, csv_, console_);
         }
+        std::optional<std::uint16_t> package_count;
         try {
-            const auto package_count =
+            package_count =
                 client.read_holding_registers(
                     registers::inverter_upgrade_package_count, 1)[0];
+        } catch (const std::exception& error) {
+            console_.diagnostic("Upgrade-Paketanzahl: " +
+                                std::string(error.what()));
+        }
+        if (package_count) {
             report_value(timestamp, "upgrade_package_count",
-                         "Upgrade-Paketanzahl", std::to_string(package_count),
+                         "Upgrade-Paketanzahl", std::to_string(*package_count),
                          "", csv_, console_);
             const auto bounded_package_count =
                 std::min<std::uint16_t>(
-                    package_count, registers::inverter_upgrade_package_max_count);
+                    *package_count,
+                    registers::inverter_upgrade_package_max_count);
             for (std::uint16_t index = 0; index < bounded_package_count;
                  ++index) {
                 const int address =
@@ -685,9 +642,6 @@ bool Sun2000Poller::poll_once() {
                      "", address, RegisterFormat::unsigned32, 1},
                     timestamp, csv_, console_);
             }
-        } catch (const std::exception& error) {
-            console_.diagnostic("Upgrade-Paketinformationen: " +
-                                std::string(error.what()));
         }
 
         static const std::array<Metric, 9> battery_metrics{{
@@ -718,7 +672,7 @@ bool Sun2000Poller::poll_once() {
             read_and_report_metric(client, metric, timestamp, csv_, console_);
         }
 
-        const std::vector<Metric> additional_battery_metrics{
+        static const std::vector<Metric> additional_battery_metrics{
             {"battery_unit_1_rated_charge_power", "W",
              registers::battery_unit_1_rated_charge_power,
              RegisterFormat::unsigned32, 1},
@@ -826,7 +780,7 @@ bool Sun2000Poller::poll_once() {
                  RegisterFormat::unsigned16, 1},
                 timestamp, csv_, console_);
         }
-        const std::array<Metric, 3> battery_soh_metrics{{
+        static const std::array<Metric, 3> battery_soh_metrics{{
             {"battery_soh_calibration_status", "code",
              registers::battery_soh_calibration_status,
              RegisterFormat::unsigned16, 1},
@@ -845,10 +799,20 @@ bool Sun2000Poller::poll_once() {
             csv_->flush();
         }
         console_.finish_poll();
-        return true;
+        const auto read_stats = client.read_stats();
+        result.read_attempts = read_stats.attempts;
+        result.reads_succeeded = read_stats.succeeded;
+        result.reads_failed = read_stats.failed;
+        return result;
     } catch (const std::exception& error) {
-        std::cerr << error.what() << '\n';
-        return false;
+        result.error = error.what();
+        if (client_owner) {
+            const auto read_stats = client_owner->read_stats();
+            result.read_attempts = read_stats.attempts;
+            result.reads_succeeded = read_stats.succeeded;
+            result.reads_failed = read_stats.failed;
+        }
+        return result;
     }
 }
 

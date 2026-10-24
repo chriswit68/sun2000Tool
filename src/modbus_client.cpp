@@ -1,4 +1,5 @@
 #include "modbus_client.hpp"
+#include "modbus_validation.hpp"
 
 #include <cerrno>
 #include <sstream>
@@ -10,6 +11,7 @@
 namespace sun2000 {
 
 ModbusClient::ModbusClient(const std::string& host, int port, int unit_id) {
+    detail::validate_connection_parameters(host, port, unit_id);
     context_ = modbus_new_tcp(host.c_str(), port);
     if (context_ == nullptr) {
         throw std::runtime_error("Modbus-Kontext konnte nicht erstellt werden.");
@@ -42,18 +44,28 @@ ModbusClient::~ModbusClient() {
 
 std::vector<std::uint16_t> ModbusClient::read_holding_registers(
     int address, int count) const {
-    std::vector<std::uint16_t> registers(static_cast<std::size_t>(count));
-    const int result =
-        modbus_read_registers(context_, address, count, registers.data());
-    if (result != count) {
-        const std::string reason =
-            result == -1 ? modbus_strerror(errno)
-                         : "unerwartete Anzahl gelesener Register";
-        throw std::runtime_error("Register " + std::to_string(address) +
-                                 " nicht lesbar: " + reason);
+    ++read_stats_.attempts;
+    try {
+        detail::validate_register_read(address, count);
+        std::vector<std::uint16_t> registers(static_cast<std::size_t>(count));
+        const int result =
+            modbus_read_registers(context_, address, count, registers.data());
+        if (result != count) {
+            const std::string reason =
+                result == -1 ? modbus_strerror(errno)
+                             : "unerwartete Anzahl gelesener Register";
+            throw std::runtime_error("Register " + std::to_string(address) +
+                                     " nicht lesbar: " + reason);
+        }
+        ++read_stats_.succeeded;
+        return registers;
+    } catch (...) {
+        ++read_stats_.failed;
+        throw;
     }
-    return registers;
 }
+
+ModbusReadStats ModbusClient::read_stats() const { return read_stats_; }
 
 std::string ModbusClient::read_string(int address, int register_count) const {
     const auto registers = read_holding_registers(address, register_count);
@@ -71,6 +83,7 @@ std::string ModbusClient::read_string(int address, int register_count) const {
 
 std::string ModbusClient::read_string_register_by_register(
     int address, int register_count) const {
+    detail::validate_register_read(address, register_count);
     std::string value;
     std::ostringstream errors;
     value.reserve(static_cast<std::size_t>(register_count) * 2);

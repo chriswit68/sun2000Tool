@@ -14,6 +14,8 @@
 namespace sun2000 {
 namespace {
 
+// std::filesystem (C++17) behandelt Pfade plattformgerecht und wird hier fuer
+// Stunden-Dateinamen, Verzeichnisdurchlauf und Ringpuffer-Bereinigung genutzt.
 std::string csv_escape(const std::string& value) {
     std::string escaped = "\"";
     for (const char character : value) {
@@ -163,6 +165,9 @@ bool is_pv_summary_signal(const std::string& signal) {
 }
 
 bool is_summary_signal(const std::string& signal) {
+    // C++17 CTAD (Template Argument Deduction) leitet den Array-Typ aus den
+    // Elementen ab; der Typ muss hier nicht explizit als std::array<...>
+    // ausgeschrieben werden.
     static constexpr std::array summary_signals{
         "model_name",
         "model_name_individual",
@@ -210,6 +215,8 @@ bool is_summary_signal(const std::string& signal) {
 
 std::optional<std::pair<double, double>> summary_numeric_range(
     const std::string& signal) {
+    // std::optional (C++17) unterscheidet "kein Zahlenbereich bekannt" von
+    // einem vorhandenen Bereich, ohne zusaetzliche Statusvariable.
     if (is_pv_summary_signal(signal)) {
         return has_prefix(signal, "pv_") &&
                        signal.find("_voltage") != std::string::npos

@@ -1,7 +1,11 @@
 #pragma once
 
+// C++17: Die verschachtelte Namespace-Schreibweise verkuerzt
+// namespace sun2000 { namespace registers { ... }}.
 namespace sun2000::registers {
 
+// C++17: inline constexpr erlaubt Konstanten in einem Header, ohne bei
+// Einbindung in mehrere .cpp-Dateien Mehrfachdefinitionen zu erzeugen.
 inline constexpr int inverter_model_name = 30000;
 inline constexpr int inverter_model_name_register_count = 15;
 inline constexpr int inverter_serial_number = 30015;

@@ -171,7 +171,24 @@ int run_poll(const PollOptions& options) {
 
     std::signal(SIGINT, handle_signal);
     do {
-        if (!poller.poll_once() && options.once) {
+        const auto result = poller.poll_once();
+        if (!result.error.empty()) {
+            std::cerr << "Poll-Durchlauf fehlgeschlagen: " << result.error
+                      << '\n';
+        }
+        if (result.reads_failed > 0) {
+            std::cerr << "Poll-Teilergebnis: " << result.reads_succeeded
+                      << " von " << result.read_attempts
+                      << " Modbus-Lesezugriffen erfolgreich; "
+                      << result.reads_failed << " fehlgeschlagen.\n";
+        }
+        if (options.once &&
+            (!result.connected || !result.error.empty() ||
+             result.reads_succeeded == 0)) {
+            if (result.connected && result.reads_succeeded == 0 &&
+                result.error.empty()) {
+                std::cerr << "Kein Register konnte erfolgreich gelesen werden.\n";
+            }
             return 1;
         }
         if (options.once) {

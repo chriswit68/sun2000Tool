@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cerrno>
+#include <exception>
 #include <mutex>
 #include <stdexcept>
 #include <thread>
@@ -230,32 +231,59 @@ std::vector<ScanResult> scan_ipv4_cidr(const std::string& cidr,
     std::vector<ScanResult> results;
     std::mutex results_mutex;
     std::atomic<std::size_t> next_host{0};
+    std::atomic<bool> stop_workers{false};
+    std::exception_ptr worker_error;
     const auto worker_count =
         std::min<std::size_t>(options.workers, hosts.size());
     std::vector<std::thread> workers;
     workers.reserve(worker_count);
 
-    for (std::size_t worker = 0; worker < worker_count; ++worker) {
-        workers.emplace_back([&]() {
-            while (true) {
-                const auto host_index = next_host.fetch_add(1);
-                if (host_index >= hosts.size()) {
-                    break;
-                }
-
-                for (const int port : options.ports) {
-                    auto result = scan_endpoint(hosts[host_index], port, options);
-                    if (result.port_open) {
-                        std::lock_guard<std::mutex> lock(results_mutex);
-                        results.push_back(std::move(result));
-                    }
-                }
+    const auto join_workers = [&workers]() {
+        for (auto& worker : workers) {
+            if (worker.joinable()) {
+                worker.join();
             }
-        });
+        }
+    };
+    try {
+        for (std::size_t worker = 0; worker < worker_count; ++worker) {
+            workers.emplace_back([&]() {
+                try {
+                    while (!stop_workers.load()) {
+                        const auto host_index = next_host.fetch_add(1);
+                        if (host_index >= hosts.size()) {
+                            break;
+                        }
+
+                        for (const int port : options.ports) {
+                            auto result =
+                                scan_endpoint(hosts[host_index], port, options);
+                            if (result.port_open) {
+                                std::lock_guard<std::mutex> lock(results_mutex);
+                                results.push_back(std::move(result));
+                            }
+                        }
+                    }
+                } catch (...) {
+                    {
+                        std::lock_guard<std::mutex> lock(results_mutex);
+                        if (!worker_error) {
+                            worker_error = std::current_exception();
+                        }
+                    }
+                    stop_workers.store(true);
+                }
+            });
+        }
+    } catch (...) {
+        stop_workers.store(true);
+        join_workers();
+        throw;
     }
 
-    for (auto& worker : workers) {
-        worker.join();
+    join_workers();
+    if (worker_error) {
+        std::rethrow_exception(worker_error);
     }
     std::sort(results.begin(), results.end(),
               [](const ScanResult& left, const ScanResult& right) {

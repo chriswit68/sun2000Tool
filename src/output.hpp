@@ -11,12 +11,21 @@ enum class ConsoleOutputMode {
     all
 };
 
+// Schreibt Messwerte in UTC-Stundendateien. Der Konstruktor erwartet einen
+// Basisdateipfad (z. B. /data/sun2000.csv); write() erzeugt daraus
+// sun2000_YYYY-MM-DDTHH.csv und behaelt maximal 24 passende Stunden-Dateien.
 class CsvWriter {
 public:
+    // Wirft bei einem leeren oder ungueltigen Basisdateipfad.
     explicit CsvWriter(const std::string& path);
 
+    // timestamp muss YYYY-MM-DDTHH:MM:SSZ sein. Datei- und Zeitstempelfehler
+    // werden als std::exception gemeldet.
     void write(const std::string& timestamp, const std::string& signal,
                const std::string& value, const std::string& unit);
+
+    // Stellt sicher, dass gepufferte Daten auf den Ausgabestrom geschrieben
+    // werden; wirft bei einem Schreibfehler.
     void flush();
 
 private:
@@ -29,13 +38,18 @@ private:
 
 class ConsoleReporter {
 public:
+    // Ausgabe fuer Messwerte und Diagnosemeldungen getrennt konfigurierbar.
+    // Im summary-Modus werden Diagnosemeldungen unterdrueckt.
     explicit ConsoleReporter(
         std::ostream& output,
         ConsoleOutputMode mode = ConsoleOutputMode::summary,
         std::ostream& diagnostics = std::cerr);
 
+    // Beginn und Ende eines Poll-Durchlaufs sowie Gruppierung der Konsolenausgabe.
     void begin_poll(const std::string& timestamp);
     void section(const std::string& title);
+    // Gibt eine Messung aus; im summary-Modus nur, wenn Signal und Wert den
+    // festgelegten Summary-Filtern entsprechen.
     void value(const std::string& signal, const std::string& label,
                const std::string& value, const std::string& unit = "");
     void diagnostic(const std::string& message);

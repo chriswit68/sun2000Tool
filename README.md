@@ -91,6 +91,11 @@ sichtbar. Die vollstaendige Ansicht zeigt die gelesenen Rohwerte ungefiltert.
 Register-Lesefehler werden im `summary`-Modus ebenfalls unterdrueckt, im Modus
 `all` jedoch auf `stderr` ausgegeben. Fehler beim Verbindungsaufbau bleiben
 unabhaengig vom Ausgabemodus sichtbar.
+Im `--once`-Modus liefert das Programm einen Fehlerstatus, wenn die Verbindung
+scheitert, ein fataler Ausgabe-/Pollfehler auftritt oder kein Modbus-Lesezugriff
+erfolgreich war. Einzelne fehlgeschlagene Register werden als Teilergebnis
+gezaehlt; lesbare Werte werden trotzdem ausgegeben und der Fehlergrund bleibt
+im `all`-Modus sichtbar.
 Mit `--console-output all` werden alle gelesenen Werte auf der Konsole
 ausgegeben. `--console-output summary` waehlt die kompakte Ansicht explizit.
 Beide Modi lesen dieselben Register; falls CSV mit `--csv` aktiviert ist,
