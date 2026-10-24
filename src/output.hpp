@@ -20,6 +20,10 @@ public:
     void flush();
 
 private:
+    void open_hour(const std::string& hour_key);
+
+    std::string base_path_;
+    std::string active_hour_;
     std::ofstream stream_;
 };
 

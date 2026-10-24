@@ -25,6 +25,31 @@ final class TelemetryCSVTests: XCTestCase {
         XCTAssertTrue(values.isEmpty)
     }
 
+    func testHourlyCSVFileUsesUTCAndFindsLatestHour() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let baseURL = directory.appendingPathComponent("latest.csv")
+        let date = ISO8601DateFormatter().date(
+            from: "2026-10-24T12:45:00Z"
+        )!
+        let hourlyURL = TelemetryCSVFile.hourlyURL(baseURL: baseURL, at: date)
+        XCTAssertEqual(hourlyURL.lastPathComponent, "latest_2026-10-24T12.csv")
+        try Data("timestamp_utc,signal,value,unit\n".utf8).write(to: hourlyURL)
+
+        XCTAssertEqual(
+            try TelemetryCSVFile.latestHourlyURL(baseURL: baseURL),
+            hourlyURL
+        )
+        XCTAssertEqual(TelemetryCSVFile.baseURL(from: hourlyURL), baseURL)
+        XCTAssertEqual(TelemetryCSVFile.baseURL(from: baseURL), baseURL)
+    }
+
     func testMalformedCSVHasUsefulError() {
         XCTAssertThrowsError(
             try TelemetryCSVParser.latestSample(
@@ -128,14 +153,51 @@ final class AppSettingsTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suiteName) }
 
         let settings = AppSettings(defaults: defaults)
-        XCTAssertEqual(settings.port, 502)
         XCTAssertEqual(settings.selectedSignals, ["active_power", "battery_soc"])
 
+        settings.csvBasePath = "/tmp/sun2000.csv"
         settings.intervalSeconds = 30
         settings.selectedSignals = ["battery_soc", "battery_soc", "active_power"]
 
         let restored = AppSettings(defaults: defaults)
+        XCTAssertEqual(restored.csvBasePath, "/tmp/sun2000.csv")
         XCTAssertEqual(restored.intervalSeconds, 30)
         XCTAssertEqual(restored.selectedSignals, ["battery_soc", "active_power"])
+    }
+}
+
+@MainActor
+final class PollingServiceTests: XCTestCase {
+    func testPollingReadsLatestHourlyCSVWithoutRunningTool() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let suiteName = "sun2000MenuTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let baseURL = directory.appendingPathComponent("sun2000.csv")
+        let csvURL = TelemetryCSVFile.hourlyURL(baseURL: baseURL, at: Date())
+        let csv = """
+        timestamp_utc,signal,value,unit
+        2026-10-24T06:00:00Z,"active_power","520.000000","W"
+        """
+        try Data(csv.utf8).write(to: csvURL)
+
+        let settings = AppSettings(defaults: defaults)
+        settings.csvBasePath = baseURL.path
+        let poller = PollingService(settings: settings)
+        await poller.pollNow()
+
+        XCTAssertEqual(poller.values.map(\.signal), ["active_power"])
+        XCTAssertEqual(poller.values.first?.value, "520.000000")
+        guard case .updated = poller.state else {
+            XCTFail("Expected the CSV sample to be loaded.")
+            return
+        }
     }
 }

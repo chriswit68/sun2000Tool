@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <ctime>
 #include <filesystem>
 #include <iomanip>
 #include <optional>
@@ -24,6 +25,115 @@ std::string csv_escape(const std::string& value) {
     }
     escaped += '"';
     return escaped;
+}
+
+bool is_valid_hour_key(const std::string& hour_key) {
+    if (hour_key.size() != 13 || hour_key[4] != '-' ||
+        hour_key[7] != '-' || hour_key[10] != 'T') {
+        return false;
+    }
+    std::tm parsed{};
+    std::istringstream input(hour_key);
+    input >> std::get_time(&parsed, "%Y-%m-%dT%H");
+    if (!input || input.peek() != std::char_traits<char>::eof()) {
+        return false;
+    }
+    parsed.tm_isdst = 0;
+    const std::time_t hour = timegm(&parsed);
+    std::tm verified{};
+    if (gmtime_r(&hour, &verified) == nullptr) {
+        return false;
+    }
+    std::ostringstream formatted;
+    formatted << std::put_time(&verified, "%Y-%m-%dT%H");
+    return formatted.str() == hour_key;
+}
+
+std::string hour_key_from_timestamp(const std::string& timestamp) {
+    if (timestamp.size() != 20 || timestamp[4] != '-' ||
+        timestamp[7] != '-' || timestamp[10] != 'T' ||
+        timestamp[13] != ':' || timestamp[16] != ':' ||
+        timestamp[19] != 'Z') {
+        throw std::invalid_argument(
+            "CSV-Zeitstempel muss im UTC-Format YYYY-MM-DDTHH:MM:SSZ vorliegen.");
+    }
+    std::tm parsed{};
+    std::istringstream input(timestamp);
+    input >> std::get_time(&parsed, "%Y-%m-%dT%H:%M:%SZ");
+    if (!input || input.peek() != std::char_traits<char>::eof()) {
+        throw std::invalid_argument("Ungueltiger UTC-Zeitstempel fuer CSV.");
+    }
+    parsed.tm_isdst = 0;
+    const std::time_t timestamp_value = timegm(&parsed);
+    std::tm verified{};
+    if (gmtime_r(&timestamp_value, &verified) == nullptr) {
+        throw std::invalid_argument("Ungueltiger UTC-Zeitstempel fuer CSV.");
+    }
+    std::ostringstream formatted;
+    formatted << std::put_time(&verified, "%Y-%m-%dT%H:%M:%SZ");
+    if (formatted.str() != timestamp) {
+        throw std::invalid_argument("Ungueltiger UTC-Zeitstempel fuer CSV.");
+    }
+    return timestamp.substr(0, 13);
+}
+
+std::time_t parse_hour_key(const std::string& hour_key) {
+    std::tm parsed{};
+    std::istringstream input(hour_key);
+    input >> std::get_time(&parsed, "%Y-%m-%dT%H");
+    if (!input || input.peek() != std::char_traits<char>::eof()) {
+        throw std::invalid_argument("Ungueltiger Stundenanteil im CSV-Dateinamen.");
+    }
+    parsed.tm_isdst = 0;
+    return timegm(&parsed);
+}
+
+std::filesystem::path hourly_file_path(const std::string& base_path,
+                                       const std::string& hour_key) {
+    const std::filesystem::path base(base_path);
+    const std::string filename =
+        base.stem().string() + "_" + hour_key + base.extension().string();
+    return base.parent_path() / filename;
+}
+
+void remove_expired_hourly_files(const std::string& base_path,
+                                 const std::string& current_hour_key) {
+    const std::filesystem::path base(base_path);
+    const std::filesystem::path directory =
+        base.parent_path().empty() ? std::filesystem::path(".")
+                                   : base.parent_path();
+    const std::string expected_prefix = base.stem().string() + "_";
+    const std::string extension = base.extension().string();
+    const std::time_t current_hour = parse_hour_key(current_hour_key);
+    const std::time_t oldest_retained_hour = current_hour - 23 * 60 * 60;
+
+    for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+        if (!entry.is_regular_file()) {
+            continue;
+        }
+        const std::string filename = entry.path().filename().string();
+        if (filename.size() != expected_prefix.size() + 13 + extension.size() ||
+            filename.compare(0, expected_prefix.size(), expected_prefix) != 0 ||
+            filename.compare(filename.size() - extension.size(),
+                             extension.size(), extension) != 0) {
+            continue;
+        }
+        const std::string hour_key =
+            filename.substr(expected_prefix.size(), 13);
+        if (!is_valid_hour_key(hour_key)) {
+            continue;
+        }
+        const std::time_t file_hour = parse_hour_key(hour_key);
+        if (file_hour < oldest_retained_hour || file_hour > current_hour) {
+            std::error_code error;
+            std::filesystem::remove(entry.path(), error);
+            if (error) {
+                throw std::runtime_error(
+                    "Alte CSV-Stundendatei kann nicht geloescht werden: " +
+                    entry.path().string() + ": " + error.message());
+            }
+        }
+    }
 }
 
 bool has_prefix(const std::string& value, const std::string& prefix) {
@@ -173,24 +283,42 @@ bool is_valid_summary_value(const std::string& signal,
 
 }  // namespace
 
-CsvWriter::CsvWriter(const std::string& path)
-    : stream_(path, std::ios::app) {
+CsvWriter::CsvWriter(const std::string& path) : base_path_(path) {
+    if (base_path_.empty() || std::filesystem::path(base_path_).filename().empty()) {
+        throw std::invalid_argument("CSV-Basispfad muss einen Dateinamen enthalten.");
+    }
+}
+
+void CsvWriter::open_hour(const std::string& hour_key) {
+    if (stream_.is_open()) {
+        stream_.close();
+    }
+    const auto path = hourly_file_path(base_path_, hour_key);
+    const bool needs_header =
+        !std::filesystem::exists(path) || std::filesystem::file_size(path) == 0;
+    stream_.open(path, std::ios::app);
     if (!stream_) {
         throw std::runtime_error("Logdatei kann nicht geoeffnet werden: " +
-                                 path);
+                                 path.string());
     }
-    if (!std::filesystem::exists(path) ||
-        std::filesystem::file_size(path) == 0) {
+    if (needs_header) {
         stream_ << "timestamp_utc,signal,value,unit\n";
         if (!stream_) {
-            throw std::runtime_error("CSV-Kopfzeile konnte nicht geschrieben werden: " +
-                                     path);
+            throw std::runtime_error(
+                "CSV-Kopfzeile konnte nicht geschrieben werden: " +
+                path.string());
         }
     }
+    active_hour_ = hour_key;
+    remove_expired_hourly_files(base_path_, active_hour_);
 }
 
 void CsvWriter::write(const std::string& timestamp, const std::string& signal,
                       const std::string& value, const std::string& unit) {
+    const std::string hour_key = hour_key_from_timestamp(timestamp);
+    if (hour_key != active_hour_ || !stream_.is_open()) {
+        open_hour(hour_key);
+    }
     stream_ << timestamp << ',' << csv_escape(signal) << ','
             << csv_escape(value) << ',' << csv_escape(unit) << '\n';
     if (!stream_) {
@@ -199,6 +327,9 @@ void CsvWriter::write(const std::string& timestamp, const std::string& signal,
 }
 
 void CsvWriter::flush() {
+    if (!stream_.is_open()) {
+        return;
+    }
     stream_.flush();
     if (!stream_) {
         throw std::runtime_error("CSV-Datei konnte nicht geschrieben werden.");

@@ -124,6 +124,70 @@ public enum TelemetryCSVParser {
     }
 }
 
+public enum TelemetryCSVFile {
+    public static func baseURL(from selectedURL: URL) -> URL {
+        let filename = selectedURL.deletingPathExtension().lastPathComponent
+        guard let separator = filename.lastIndex(of: "_") else {
+            return selectedURL
+        }
+        let hour = String(filename[filename.index(after: separator)...])
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd'T'HH"
+        guard hour.count == 13,
+              let parsed = formatter.date(from: hour),
+              formatter.string(from: parsed) == hour else {
+            return selectedURL
+        }
+
+        let stem = String(filename[..<separator])
+        return selectedURL
+            .deletingLastPathComponent()
+            .appendingPathComponent("\(stem).\(selectedURL.pathExtension)")
+    }
+
+    public static func hourlyURL(baseURL: URL, at date: Date) -> URL {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd'T'HH"
+        let hour = formatter.string(from: date)
+        let filename =
+            "\(baseURL.deletingPathExtension().lastPathComponent)_\(hour).\(baseURL.pathExtension)"
+        return baseURL.deletingLastPathComponent().appendingPathComponent(filename)
+    }
+
+    public static func latestHourlyURL(baseURL: URL) throws -> URL? {
+        let directory = baseURL.deletingLastPathComponent()
+        let prefix = "\(baseURL.deletingPathExtension().lastPathComponent)_"
+        let suffix = ".\(baseURL.pathExtension)"
+        let filenames = try FileManager.default.contentsOfDirectory(
+            atPath: directory.path
+        )
+        let matching = filenames.filter { filename in
+            guard filename.hasPrefix(prefix), filename.hasSuffix(suffix) else {
+                return false
+            }
+            let hour = filename.dropFirst(prefix.count).dropLast(suffix.count)
+            guard hour.count == 13 else { return false }
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            formatter.calendar = Calendar(identifier: .gregorian)
+            formatter.timeZone = TimeZone(secondsFromGMT: 0)
+            formatter.dateFormat = "yyyy-MM-dd'T'HH"
+            guard let parsed = formatter.date(from: String(hour)) else {
+                return false
+            }
+            return formatter.string(from: parsed) == String(hour)
+        }
+        guard let latest = matching.max() else { return nil }
+        return directory.appendingPathComponent(latest)
+    }
+}
+
 public enum TelemetrySignalCatalog {
     public static func label(for signal: String) -> String {
         let labels = [

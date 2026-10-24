@@ -8,20 +8,15 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            Section("sun2000Tool") {
+            Section("Messwerte aus CSV") {
                 HStack {
-                    TextField("Pfad zur Anwendung", text: $settings.toolPath)
+                    TextField("Pfad zur CSV-Basisdatei", text: $settings.csvBasePath)
                         .textFieldStyle(.roundedBorder)
-                    Button("Auswaehlen …", action: chooseTool)
+                    Button("Auswaehlen …", action: chooseCSV)
                 }
-                TextField("Wechselrichter-Host oder IP-Adresse", text: $settings.host)
-                    .textFieldStyle(.roundedBorder)
-                HStack {
-                    TextField("Port", value: $settings.port, format: .number)
-                        .frame(width: 120)
-                    TextField("Unit-ID", value: $settings.unitID, format: .number)
-                        .frame(width: 120)
-                }
+                Text("Waehle die Basisdatei, z. B. sun2000.csv oder eine Stunden-Datei wie sun2000_2026-10-24T06.csv.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
             }
 
             Section("Aktualisierung") {
@@ -109,17 +104,17 @@ struct SettingsView: View {
         }
     }
 
-    private func chooseTool() {
+    private func chooseCSV() {
         let panel = NSOpenPanel()
-        panel.title = "sun2000Tool auswaehlen"
-        panel.message = "Waehle die ausfuehrbare sun2000Tool-Datei."
+        panel.title = "CSV-Datei auswaehlen"
+        panel.message = "Waehle die CSV-Basisdatei oder eine ihrer Stunden-Dateien."
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
         NSApp.activate(ignoringOtherApps: true)
         panel.begin { response in
             guard response == .OK, let url = panel.url else { return }
-            settings.toolPath = url.path
+            settings.csvBasePath = TelemetryCSVFile.baseURL(from: url).path
         }
     }
 }

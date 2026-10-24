@@ -19,8 +19,8 @@ cmake --build build
 ### Native macOS-Menueleisten-App
 
 `sun2000Menu` ist eine eigenstaendige SwiftUI-/AppKit-App fuer macOS 15 und
-neuer. Sie startet `sun2000Tool` regelmaessig mit `--once --csv` und verwaltet
-ihre aktuelle CSV unter `~/Library/Application Support/sun2000Menu/`.
+neuer. Sie startet `sun2000Tool` nicht selbst, sondern liest in konfigurierbaren
+Abstaenden die neueste passende Stunden-CSV-Datei ein.
 
 ```bash
 cd sun2000Menu
@@ -29,15 +29,17 @@ swift test
 open ../build/sun2000Menu.app
 ```
 
-Beim ersten Start die ausfuehrbare `sun2000Tool`-Datei, Host/IP-Adresse,
-Modbus-Port und Unit-ID in den Einstellungen angeben. Standardmaessig ist das
-Intervall 10 Sekunden. Die Auswahl fuer die direkte Menueleistenanzeige wird
-nach der ersten erfolgreichen Abfrage aus den verfuegbaren CSV-Signalen
-angeboten. Linksklick zeigt alle uebrigen Werte; Rechtsklick oeffnet die
-Einstellungen. Die App wird als Menu-bar-only-App ohne Dock-Symbol gestartet.
-Bei einem erfolgreichen Prozesslauf ohne CSV-Messwerte zeigt der Status auch
-die ersten Registerdiagnosen von `sun2000Tool` an; pruefe dann insbesondere
-Host, Port und Unit-ID.
+Beim ersten Start in den Einstellungen eine CSV-Basisdatei auswaehlen (z. B.
+`sun2000.csv` oder eine zugehoerige Datei wie
+`sun2000_2026-10-24T06.csv`). Die App erkennt daraus die stundenweise
+Dateinamenreihe. Das Standardintervall fuer das erneute Einlesen betraegt
+10 Sekunden; es steuert ausschliesslich den Dateizugriff und startet keine
+Wechselrichterabfrage. `sun2000Tool` muss separat mit `--csv` laufen und in
+dieselbe CSV-Dateireihe schreiben. Die Auswahl fuer die direkte
+Menueleistenanzeige wird nach dem ersten erfolgreichen Einlesen aus den
+verfuegbaren CSV-Signalen angeboten. Linksklick zeigt alle uebrigen Werte;
+Rechtsklick oeffnet die Einstellungen. Die App wird als Menu-bar-only-App ohne
+Dock-Symbol gestartet.
 
 ## Modbus-Endpunkt finden
 
@@ -69,8 +71,12 @@ erweitert und getestet werden.
 ```
 
 CSV-Ausgabe ist standardmaessig deaktiviert. Mit `--csv` wird sie eingeschaltet;
-optional kann mit `--log-file DATEI` ein anderer Dateiname angegeben werden.
-Ohne diese Option werden keine CSV-Datei angelegt oder veraendert:
+optional kann mit `--log-file DATEI` ein anderer Basisname samt Zielverzeichnis
+angegeben werden. Fuer jede UTC-Stunde wird bei der ersten Messung eine Datei
+nach dem Muster `sun2000_YYYY-MM-DDTHH.csv` angelegt; weitere Messungen dieser
+Stunde werden angehaengt. `--log-file /pfad/anlage.csv` erzeugt entsprechend
+`/pfad/anlage_YYYY-MM-DDTHH.csv`. Ohne `--csv` werden keine CSV-Dateien angelegt
+oder veraendert:
 
 ```bash
 ./build/sun2000Tool poll --host 192.168.1.50 --interval-seconds 10 \
@@ -99,7 +105,10 @@ vollstaendige Abdeckung aller firmware- und komponentenabhaengigen Register.
 Optimizerdaten verwenden einen separaten Datei-/Synchronisationsmechanismus;
 schreibbare Konfigurationsregister sowie detaillierte Telemetrie einzelner
 Batteriepacks werden nicht ausgelesen. SOH-Kalibrierstatusregister sind enthalten.
-Die aktivierte CSV-Datei wird fortlaufend erweitert; Zeitstempel sind UTC.
+Der CSV-Ringspeicher behaelt die aktuelle UTC-Stunde und die 23 vorangegangenen
+Stunden (maximal 24 Stunden-Dateien). Aeltere passende Dateien werden beim
+ersten Schreiben in ein Stundenfenster geloescht; andere Dateien im Verzeichnis
+bleiben unangetastet. Das gilt gleichermassen fuer `--once` und Dauerbetrieb.
 `--once` liest einmal. `Ctrl-C` beendet den Dauerbetrieb.
 Die Identifikationsdaten enthalten auch die numerische Modell-ID aus Register
 30070 (CSV-Signal `model_id`).

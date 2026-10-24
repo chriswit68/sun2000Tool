@@ -28,9 +28,9 @@ public final class PollingService: ObservableObject {
     public var statusDescription: String {
         switch state {
         case .idle:
-            return "Noch keine Abfrage durchgefuehrt."
+            return "Noch keine CSV-Datei eingelesen."
         case .polling:
-            return "Wechselrichter wird abgefragt …"
+            return "CSV-Datei wird eingelesen …"
         case .updated(let date):
             return "Zuletzt aktualisiert: \(date.formatted(date: .omitted, time: .shortened))"
         case .failed(let message):
@@ -68,14 +68,9 @@ public final class PollingService: ObservableObject {
 
         isPolling = true
         state = .polling
-        let configuration = PollConfiguration(
-            toolURL: URL(fileURLWithPath: settings.toolPath),
-            host: settings.host,
-            port: settings.port,
-            unitID: settings.unitID
-        )
+        let csvBaseURL = URL(fileURLWithPath: settings.csvBasePath)
         let result = await Task.detached(priority: .utility) {
-            executePoll(configuration)
+            executePoll(csvBaseURL: csvBaseURL)
         }.value
         isPolling = false
 
@@ -89,108 +84,25 @@ public final class PollingService: ObservableObject {
     }
 }
 
-private struct PollConfiguration: Sendable {
-    let toolURL: URL
-    let host: String
-    let port: Int
-    let unitID: Int
-}
-
 private enum PollResult: Sendable {
     case success([TelemetryValue])
     case failure(String)
 }
 
-private func conciseDiagnostics(_ output: String) -> String {
-    let lines = output
-        .split(whereSeparator: \.isNewline)
-        .prefix(4)
-        .map(String.init)
-    guard !lines.isEmpty else { return "" }
-    let summary = lines.joined(separator: "\n")
-    return String(summary.prefix(1200))
-}
-
-private func executePoll(_ configuration: PollConfiguration) -> PollResult {
+private func executePoll(csvBaseURL: URL) -> PollResult {
     do {
-        let applicationSupport = try FileManager.default.url(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask,
-            appropriateFor: nil,
-            create: true
-        )
-        let dataDirectory = applicationSupport.appendingPathComponent(
-            "sun2000Menu",
-            isDirectory: true
-        )
-        try FileManager.default.createDirectory(
-            at: dataDirectory,
-            withIntermediateDirectories: true
-        )
-        let csvURL = dataDirectory.appendingPathComponent("latest.csv")
-        let errorURL = dataDirectory.appendingPathComponent("poll.stderr")
-        for url in [csvURL, errorURL] where
-            FileManager.default.fileExists(atPath: url.path) {
-            try FileManager.default.removeItem(at: url)
-        }
-        guard FileManager.default.createFile(
-            atPath: errorURL.path,
-            contents: nil
+        guard let csvURL = try TelemetryCSVFile.latestHourlyURL(
+            baseURL: csvBaseURL
         ) else {
-            throw NSError(
-                domain: "sun2000Menu",
-                code: 1,
-                userInfo: [NSLocalizedDescriptionKey:
-                    "Die Diagnoseausgabe konnte nicht angelegt werden."]
-            )
+            return .failure("Keine Stunden-CSV zur konfigurierten Basisdatei gefunden.")
         }
-
-        let process = Process()
-        process.executableURL = configuration.toolURL
-        process.arguments = [
-            "poll",
-            "--host", configuration.host,
-            "--port", String(configuration.port),
-            "--unit-id", String(configuration.unitID),
-            "--once",
-            "--csv",
-            "--log-file", csvURL.path,
-            "--console-output", "all"
-        ]
-        process.standardOutput = FileHandle.nullDevice
-        let errorHandle = try FileHandle(forWritingTo: errorURL)
-        process.standardError = errorHandle
-        try process.run()
-        process.waitUntilExit()
-        try errorHandle.close()
-
-        let errorOutput = try String(contentsOf: errorURL, encoding: .utf8)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let diagnosticSummary = conciseDiagnostics(errorOutput)
-        guard process.terminationReason == .exit, process.terminationStatus == 0 else {
-            try? FileManager.default.removeItem(at: errorURL)
-            let details = diagnosticSummary.isEmpty
-                ? ""
-                : "\n\(diagnosticSummary)"
-            return .failure(
-                "sun2000Tool wurde mit Status \(process.terminationStatus) beendet.\(details)"
-            )
-        }
-
         let contents = try String(contentsOf: csvURL, encoding: .utf8)
         let values = try TelemetryCSVParser.latestSample(from: contents)
         guard !values.isEmpty else {
-            try? FileManager.default.removeItem(at: errorURL)
-            let diagnostics = diagnosticSummary.isEmpty
-                ? "Keine Registerwerte empfangen. Pruefe Host, Port und Unit-ID."
-                : diagnosticSummary
-            return .failure(
-                "sun2000Tool hat keine Messwerte in die CSV geschrieben.\n\(diagnostics)"
-            )
+            return .failure("Die neueste Stunden-CSV enthaelt noch keine Messwerte.")
         }
-        try FileManager.default.removeItem(at: errorURL)
         return .success(values)
     } catch {
-        return .failure("Abfrage fehlgeschlagen: \(error.localizedDescription)")
+        return .failure("CSV-Datei konnte nicht eingelesen werden: \(error.localizedDescription)")
     }
 }
