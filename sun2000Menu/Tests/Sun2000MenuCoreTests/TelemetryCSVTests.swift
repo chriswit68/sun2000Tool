@@ -217,4 +217,37 @@ final class PollingServiceTests: XCTestCase {
             return
         }
     }
+
+    func testPollingReportsCorruptCSVRowsOnlyWhenNewRowsAppear() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let suiteName = "sun2000MenuTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let baseURL = directory.appendingPathComponent("sun2000.csv")
+        let csvURL = TelemetryCSVFile.hourlyURL(baseURL: baseURL, at: Date())
+        let csv = """
+        timestamp_utc,signal,value,unit
+        2026-10-24T06:00:00Z,"active_power","520.000000","W"
+        \0\0damaged row
+        """
+        try Data(csv.utf8).write(to: csvURL)
+
+        let settings = AppSettings(defaults: defaults)
+        settings.csvBasePath = baseURL.path
+        let poller = PollingService(settings: settings)
+        await poller.pollNow()
+
+        XCTAssertTrue(poller.statusDescription.contains("1 neue CSV-Zeile"))
+
+        await poller.pollNow()
+
+        XCTAssertFalse(poller.statusDescription.contains("NUL-Zeichen"))
+    }
 }

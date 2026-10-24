@@ -16,6 +16,8 @@ public final class PollingService: ObservableObject {
 
     private let settings: AppSettings
     private var timerTask: Task<Void, Never>?
+    private var lastCorruptCSVPath: String?
+    private var lastCorruptRowCount = 0
 
     public init(settings: AppSettings) {
         self.settings = settings
@@ -34,7 +36,7 @@ public final class PollingService: ObservableObject {
         case .updated(let date, let skippedCorruptRows):
             let updated = "Zuletzt aktualisiert: \(date.formatted(date: .omitted, time: .shortened))"
             guard skippedCorruptRows > 0 else { return updated }
-            return "\(updated) – \(skippedCorruptRows) beschaedigte CSV-Zeile(n) mit NUL-Zeichen ignoriert."
+            return "\(updated) – \(skippedCorruptRows) neue CSV-Zeile(n) mit NUL-Zeichen ignoriert."
         case .failed(let message):
             return message
         }
@@ -77,9 +79,20 @@ public final class PollingService: ObservableObject {
         isPolling = false
 
         switch result {
-        case .success(let sample):
+        case .success(let sample, let csvPath):
             values = sample.values
-            state = .updated(Date(), skippedCorruptRows: sample.skippedCorruptRows)
+            let newlySkippedRows: Int
+            if lastCorruptCSVPath == csvPath {
+                newlySkippedRows = max(
+                    0,
+                    sample.skippedCorruptRows - lastCorruptRowCount
+                )
+            } else {
+                newlySkippedRows = sample.skippedCorruptRows
+            }
+            lastCorruptCSVPath = csvPath
+            lastCorruptRowCount = sample.skippedCorruptRows
+            state = .updated(Date(), skippedCorruptRows: newlySkippedRows)
         case .failure(let message):
             state = .failed(message)
         }
@@ -87,7 +100,7 @@ public final class PollingService: ObservableObject {
 }
 
 private enum PollResult: Sendable {
-    case success(TelemetryCSVSample)
+    case success(TelemetryCSVSample, csvPath: String)
     case failure(String)
 }
 
@@ -105,7 +118,7 @@ private func executePoll(csvBaseURL: URL) -> PollResult {
         guard !sample.values.isEmpty else {
             return .failure("Die neueste Stunden-CSV enthaelt noch keine Messwerte.")
         }
-        return .success(sample)
+        return .success(sample, csvPath: csvURL.path)
     } catch {
         return .failure("CSV-Datei konnte nicht eingelesen werden: \(error.localizedDescription)")
     }
