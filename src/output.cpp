@@ -2,13 +2,18 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
+#include <chrono>
 #include <cmath>
 #include <ctime>
 #include <filesystem>
+#include <fstream>
 #include <iomanip>
+#include <iterator>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
+#include <system_error>
 #include <utility>
 
 namespace sun2000 {
@@ -110,6 +115,16 @@ std::filesystem::path hourly_file_path(const std::string& base_path,
     const std::string filename =
         base.stem().string() + "_" + hour_key + base.extension().string();
     return base.parent_path() / filename;
+}
+
+std::filesystem::path temporary_file_path(
+    const std::filesystem::path& destination) {
+    static std::atomic<unsigned long long> next_id{0};
+    const auto nonce = std::chrono::steady_clock::now()
+                           .time_since_epoch()
+                           .count();
+    return destination.string() + ".tmp." + std::to_string(nonce) + "." +
+           std::to_string(next_id.fetch_add(1, std::memory_order_relaxed));
 }
 
 void remove_expired_hourly_files(const std::string& base_path,
@@ -312,12 +327,8 @@ CsvWriter::CsvWriter(const std::string& path, BeforeHourOpen before_hour_open)
 }
 
 void CsvWriter::open_hour(const std::string& hour_key) {
-    if (stream_.is_open()) {
-        stream_.flush();
-        if (!stream_) {
-            throw std::runtime_error("Vor Stundenwechsel konnte CSV nicht geschrieben werden.");
-        }
-        stream_.close();
+    if (!active_hour_.empty() && hour_key != active_hour_) {
+        publish_pending_rows();
     }
     if (before_hour_open_) {
         const std::string hour_to_archive =
@@ -327,22 +338,6 @@ void CsvWriter::open_hour(const std::string& hour_key) {
             before_hour_open_(previous_path.string());
         }
     }
-    const auto path = hourly_file_path(base_path_, hour_key);
-    const bool needs_header =
-        !std::filesystem::exists(path) || std::filesystem::file_size(path) == 0;
-    stream_.open(path, std::ios::app);
-    if (!stream_) {
-        throw std::runtime_error("Logdatei kann nicht geoeffnet werden: " +
-                                 path.string());
-    }
-    if (needs_header) {
-        stream_ << "timestamp_utc,signal,value,unit\n";
-        if (!stream_) {
-            throw std::runtime_error(
-                "CSV-Kopfzeile konnte nicht geschrieben werden: " +
-                path.string());
-        }
-    }
     active_hour_ = hour_key;
     remove_expired_hourly_files(base_path_, active_hour_);
 }
@@ -350,23 +345,78 @@ void CsvWriter::open_hour(const std::string& hour_key) {
 void CsvWriter::write(const std::string& timestamp, const std::string& signal,
                       const std::string& value, const std::string& unit) {
     const std::string hour_key = hour_key_from_timestamp(timestamp);
-    if (hour_key != active_hour_ || !stream_.is_open()) {
+    if (hour_key != active_hour_) {
         open_hour(hour_key);
     }
-    stream_ << timestamp << ',' << csv_escape(signal) << ','
-            << csv_escape(value) << ',' << csv_escape(unit) << '\n';
-    if (!stream_) {
-        throw std::runtime_error("CSV-Datensatz konnte nicht geschrieben werden.");
-    }
+    pending_rows_.push_back(timestamp + ',' + csv_escape(signal) + ',' +
+                             csv_escape(value) + ',' + csv_escape(unit) + '\n');
 }
 
 void CsvWriter::flush() {
-    if (!stream_.is_open()) {
+    if (pending_rows_.empty()) {
         return;
     }
-    stream_.flush();
-    if (!stream_) {
-        throw std::runtime_error("CSV-Datei konnte nicht geschrieben werden.");
+    publish_pending_rows();
+}
+
+void CsvWriter::publish_pending_rows() {
+    if (pending_rows_.empty()) {
+        return;
+    }
+
+    const auto destination = hourly_file_path(base_path_, active_hour_);
+    std::string contents;
+    if (std::filesystem::exists(destination)) {
+        std::ifstream existing(destination, std::ios::binary);
+        if (!existing) {
+            throw std::runtime_error("CSV-Datei kann nicht gelesen werden: " +
+                                     destination.string());
+        }
+        contents.assign(std::istreambuf_iterator<char>(existing),
+                        std::istreambuf_iterator<char>());
+        if (existing.bad()) {
+            throw std::runtime_error("CSV-Datei kann nicht vollstaendig gelesen "
+                                     "werden: " +
+                                     destination.string());
+        }
+    }
+    if (contents.empty()) {
+        contents = "timestamp_utc,signal,value,unit\n";
+    }
+    for (const auto& row : pending_rows_) {
+        contents += row;
+    }
+
+    const auto temporary = temporary_file_path(destination);
+    try {
+        {
+            std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
+            if (!output) {
+                throw std::runtime_error(
+                    "Temporäre CSV-Datei kann nicht angelegt werden: " +
+                    temporary.string());
+            }
+            output.write(contents.data(),
+                         static_cast<std::streamsize>(contents.size()));
+            output.flush();
+            if (!output) {
+                throw std::runtime_error(
+                    "Temporäre CSV-Datei konnte nicht vollstaendig geschrieben "
+                    "werden: " +
+                    temporary.string());
+            }
+        }
+        std::error_code error;
+        std::filesystem::rename(temporary, destination, error);
+        if (error) {
+            throw std::system_error(error, "CSV-Datei kann nicht atomar "
+                                           "veroeffentlicht werden");
+        }
+        pending_rows_.clear();
+    } catch (...) {
+        std::error_code ignored;
+        std::filesystem::remove(temporary, ignored);
+        throw;
     }
 }
 

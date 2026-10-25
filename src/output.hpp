@@ -1,9 +1,9 @@
 #pragma once
 
-#include <fstream>
 #include <functional>
 #include <iostream>
 #include <string>
+#include <vector>
 
 namespace sun2000 {
 
@@ -28,16 +28,17 @@ public:
     void write(const std::string& timestamp, const std::string& signal,
                const std::string& value, const std::string& unit);
 
-    // Stellt sicher, dass gepufferte Daten auf den Ausgabestrom geschrieben
-    // werden; wirft bei einem Schreibfehler.
+    // Veröffentlicht alle Messwerte des Polls atomar; Leser sehen entweder
+    // den vorherigen oder den vollständigen neuen Dateistand.
     void flush();
 
 private:
     void open_hour(const std::string& hour_key);
+    void publish_pending_rows();
 
     std::string base_path_;
     std::string active_hour_;
-    std::ofstream stream_;
+    std::vector<std::string> pending_rows_;
     BeforeHourOpen before_hour_open_;
 };
 

@@ -90,7 +90,10 @@ angegeben werden. Fuer jede UTC-Stunde wird bei der ersten Messung eine Datei
 nach dem Muster `sun2000_YYYY-MM-DDTHH.csv` angelegt; weitere Messungen dieser
 Stunde werden angehaengt. `--log-file /pfad/anlage.csv` erzeugt entsprechend
 `/pfad/anlage_YYYY-MM-DDTHH.csv`. Ohne `--csv` werden keine CSV-Dateien angelegt
-oder veraendert:
+oder veraendert. Die Messzeilen eines Polls werden zuerst in eine temporaere
+Datei geschrieben und danach atomar veroeffentlicht. Leser ueber ein Netzlaufwerk
+sehen damit entweder den vorherigen vollstaendigen Stand oder den neuen
+vollstaendigen Poll, aber keinen waehrend des Schreibens partiellen Datensatz:
 
 ```bash
 ./build/sun2000Tool poll --host 192.168.1.50 --interval-seconds 10 \

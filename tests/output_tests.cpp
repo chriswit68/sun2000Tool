@@ -195,6 +195,54 @@ void test_hourly_rotation_and_same_hour_append() {
     std::filesystem::remove_all(directory);
 }
 
+void test_csv_poll_is_published_atomically() {
+    const auto unique_suffix =
+        std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto directory = std::filesystem::temp_directory_path() /
+                           ("sun2000-atomic-csv-test-" +
+                            std::to_string(unique_suffix));
+    std::filesystem::create_directories(directory);
+    const auto base = directory / "plant.csv";
+    const auto csv_path = hourly_path(base, "2026-10-23T08:00:00Z");
+
+    {
+        sun2000::CsvWriter csv(base.string());
+        csv.write("2026-10-23T08:00:00Z", "active_power", "10", "W");
+        csv.flush();
+
+        std::ifstream before_second_poll(csv_path, std::ios::binary);
+        const std::string published_before(
+            (std::istreambuf_iterator<char>(before_second_poll)),
+            std::istreambuf_iterator<char>());
+        expect(published_before.find("\"active_power\",\"10\"") !=
+                   std::string::npos,
+               "Erster Poll wurde nicht vollstaendig veroeffentlicht.");
+
+        csv.write("2026-10-23T08:01:00Z", "active_power", "20", "W");
+        std::ifstream during_second_poll(csv_path, std::ios::binary);
+        const std::string visible_during_poll(
+            (std::istreambuf_iterator<char>(during_second_poll)),
+            std::istreambuf_iterator<char>());
+        expect(visible_during_poll == published_before,
+               "Unvollstaendiger Poll wurde vor flush sichtbar.");
+
+        csv.flush();
+    }
+
+    std::ifstream final_stream(csv_path, std::ios::binary);
+    const std::string final_contents((std::istreambuf_iterator<char>(final_stream)),
+                                     std::istreambuf_iterator<char>());
+    expect(final_contents.find("\"active_power\",\"10\"") !=
+               std::string::npos &&
+               final_contents.find("\"active_power\",\"20\"") !=
+                   std::string::npos,
+           "Atomare Veroeffentlichung hat Poll-Datensaetze verloren.");
+    expect(final_contents.find('\0') == std::string::npos,
+           "CSV-Datei enthaelt nach Poll-Veroeffentlichung NUL-Zeichen.");
+
+    std::filesystem::remove_all(directory);
+}
+
 void test_csv_first_open_archives_existing_previous_hour() {
     const auto unique_suffix =
         std::chrono::steady_clock::now().time_since_epoch().count();
@@ -312,6 +360,7 @@ int main() {
     test_all_console_output_includes_unfiltered_values();
     test_summary_suppresses_register_diagnostics();
     test_hourly_rotation_and_same_hour_append();
+    test_csv_poll_is_published_atomically();
     test_csv_first_open_archives_existing_previous_hour();
     test_failed_archive_prevents_opening_next_hour_file();
     test_hourly_retention_keeps_current_and_previous_23_hours();
