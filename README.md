@@ -30,11 +30,18 @@ Netzwerk- und Berechtigungshinweise stehen in
 [docs/docker/README.md](docs/docker/README.md). Der native macOS-Build bleibt
 unveraendert und kann weiterhin direkt mit CMake gestartet werden.
 
+Die Architektur beider Anwendungen einschliesslich CSV-Stundenarchiv,
+Poll-Snapshots, SMB-Leseweg und TimescaleDB-Ablauf ist in der
+[Software Design Description nach arc42](docs/software-design-description-arc42.md)
+beschrieben.
+
 ### Native macOS-Menueleisten-App
 
 `sun2000Menu` ist eine eigenstaendige SwiftUI-/AppKit-App fuer macOS 15 und
 neuer. Sie startet `sun2000Tool` nicht selbst, sondern liest in konfigurierbaren
-Abstaenden die neueste passende Stunden-CSV-Datei ein.
+Abstaenden den neuesten Poll-Snapshot ein. Nur wenn noch kein Snapshot-
+Verzeichnis vorhanden ist, verwendet sie als Legacy-Fallback die neueste
+Stunden-CSV-Datei.
 
 ```bash
 cd sun2000Menu
@@ -43,10 +50,10 @@ swift test
 open ../build/sun2000Menu.app
 ```
 
-Beim ersten Start in den Einstellungen eine CSV-Basisdatei auswaehlen (z. B.
-`sun2000.csv` oder eine zugehoerige Datei wie
-`sun2000_2026-10-24T06.csv`). Die App erkennt daraus die stundenweise
-Dateinamenreihe. Das Standardintervall fuer das erneute Einlesen betraegt
+Beim ersten Start in den Einstellungen die CSV-Basisdatei auswaehlen (z. B.
+`sun2000.csv` oder eine zugehoerige Stunden-Datei wie
+`sun2000_2026-10-24T06.csv`). Daraus leitet die App das Snapshot-Verzeichnis
+`sun2000_snapshots` ab. Das Standardintervall fuer das erneute Einlesen betraegt
 10 Sekunden; es steuert ausschliesslich den Dateizugriff und startet keine
 Wechselrichterabfrage. `sun2000Tool` muss separat mit `--csv` laufen und in
 dieselbe CSV-Dateireihe schreiben. Die Auswahl fuer die direkte
