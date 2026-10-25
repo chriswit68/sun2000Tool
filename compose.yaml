@@ -26,6 +26,8 @@ services:
       - "${TIMESCALE_DB_NAME:-pv_user_db}"
       - --db-user
       - "${TIMESCALE_DB_USER:-pv_user}"
+      - --db-retention-days
+      - "${TIMESCALE_DB_RETENTION_DAYS:-356}"
     environment:
       PGPASSWORD: "${PGPASSWORD:?Set PGPASSWORD}"
     volumes:

@@ -13,6 +13,7 @@ struct TimescaleConfig {
     std::string database;
     std::string user;
     std::string password;
+    int retention_days{356};
 };
 
 struct TelemetryRecord {

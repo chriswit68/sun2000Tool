@@ -125,6 +125,15 @@ ebenfalls die vorhandene Datei der unmittelbar vorherigen Stunde archiviert.
 `--once` schreibt nicht in die Datenbank; `--timescale-db` kann deshalb nicht
 zusammen mit `--once` verwendet werden.
 
+Fuer die TimescaleDB-Tabelle wird beim Start eine Retention-Policy eingerichtet.
+`--db-retention-days TAGE` steuert die Aufbewahrung; Standard sind 356 Tage.
+Zulaessig sind 1 bis 36500 Tage. Wird der Wert bei einem spaeteren Start
+geaendert, ersetzt das Programm die bestehende Policy durch die neue Einstellung.
+TimescaleDB entfernt abgelaufene Zeitbereiche im Hintergrund und kann nur ganze
+Chunks loeschen; die tatsaechliche Aufbewahrung kann daher etwas ueber dem
+eingestellten Grenzwert liegen. Die Policy erfordert, dass der DB-Benutzer
+Eigentuemer der Hypertable ist.
+
 Die Tabelle `sun2000_telemetry` und die Timescale-Hypertable werden bei der
 Verbindung automatisch angelegt. Jede Zeile enthaelt Zeitstempel, Signalname,
 Wert als Originaltext, fuer numerische Werte zusaetzlich `numeric_value`
@@ -132,7 +141,9 @@ Wert als Originaltext, fuer numerische Werte zusaetzlich `numeric_value`
 Messwerte koennen ohne Cast direkt numerisch ausgewertet werden. Die komplette
 Stundendatei wird transaktional gespeichert; Wiederholungen werden ueber
 `(timestamp, signal)` idempotent aktualisiert. Die genaue Messwertdarstellung
-bleibt so auch fuer Textsignale erhalten.
+bleibt so auch fuer Textsignale erhalten. Die Retention-Policy entfernt
+abgelaufene TimescaleDB-Chunks; sie wirkt unabhaengig von der 24-Stunden-
+Dateibereinigung auf das Tabellen- und Indexvolumen.
 
 Standardverbindung: Host `wittis-ds423-01`, Port `5444`, Datenbank `pv_user_db`,
 Benutzer `pv_user`. Abweichungen koennen mit `--db-host`, `--db-port`,

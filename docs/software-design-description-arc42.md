@@ -61,6 +61,8 @@ Implementierung, TimescaleDB selbst und Grafana selbst.
   erzeugt. Alle im Poll erfolgreich gelesenen Werte teilen diesen Zeitstempel.
 - `--timescale-db` setzt `--csv` voraus und kann nicht mit `--once` verwendet
   werden.
+- Die TimescaleDB-Retention-Policy wird aus `--db-retention-days` konfiguriert;
+  Standard ist 356 Tage, gültiger Bereich 1–36500 Tage.
 - Das TimescaleDB-Passwort wird aus `PGPASSWORD` gelesen. Es ist nicht Teil der
   Kommandozeile oder des Quellcodes.
 - Es wird eine einzige aktive Modbus-Verbindung pro laufendem Poller angenommen.
@@ -247,6 +249,14 @@ Beim ersten Wert eines Polls, dessen UTC-Stunde von der aktiven Stunde abweicht:
    `(timestamp, signal)` als Konfliktschlüssel eingefügt oder aktualisiert.
 5. Nur nach erfolgreichem Archivieren wird die neue Stunde aktiv.
 6. Der aktuelle Poll wird am Ende in Stunden-CSV und Snapshot veröffentlicht.
+
+Beim Erzeugen des `TimescaleWriter` wird zusätzlich die Retention-Policy für
+`sun2000_telemetry` konfiguriert. Die bisherige Policy wird innerhalb einer
+Transaktion entfernt und mit dem aktuellen `--db-retention-days`-Wert neu
+angelegt. Dadurch wird eine geänderte CLI-/Compose-Einstellung auch auf eine
+bereits vorhandene Datenbank angewandt. TimescaleDB führt das Löschen im
+Hintergrund aus und entfernt nur vollständige Chunks; die effektive
+Aufbewahrungsdauer kann etwas länger als der konfigurierte Grenzwert sein.
 
 Die Tabelle `sun2000_telemetry` enthält `timestamp`, `signal`, `value`,
 `numeric_value` und `unit`. Nichtnumerische Textwerte behalten ihren Originaltext
@@ -481,6 +491,9 @@ für macOS gebaut.
 - **Text und Zahlen:** Die Datenbank bewahrt Originalwerte als Text. Grafana-
   Zeitreihen verwenden nur `numeric_value`; nichtnumerische Werte gehören in
   Tabellenpanels.
+- **Retention-Granularität:** Die Datenbank-Policy kann nur ganze TimescaleDB-
+  Chunks entfernen. Daher ist `--db-retention-days` ein Aufbewahrungsziel und
+  keine sekundengenaue Löschgrenze.
 - **Tests:** Unit- und Integrationstests prüfen lokale Parser-, Writer- und
   Dateiverhaltensweisen. Sie simulieren nicht den SMB-Cache der konkreten
   Synology-/Mac-Installation und führen keinen Live-DB-Test aus.

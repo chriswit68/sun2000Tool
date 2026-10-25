@@ -23,6 +23,8 @@ und `./build/sun2000Tool` gestartet werden.
 5. Setze die Variablen aus `.env.example` in Dockhands Stack-Umgebung:
    - `SUN2000_HOST`: feste IP-Adresse des Wechselrichters
    - `TIMESCALE_DB_HOST` und `TIMESCALE_DB_PORT`: erreichbarer DB-Endpunkt
+   - `TIMESCALE_DB_RETENTION_DAYS`: Aufbewahrung der Datenbankwerte in Tagen
+     (Standard: `356`, zulaessiger Bereich: `1` bis `36500`)
    - `PGPASSWORD`: Datenbankpasswort
    - `SUN2000_UID` und `SUN2000_GID`: Besitzerkennung fuer die CSV-Dateien
 6. Starte den Stack und pruefe die Container-Logs auf erfolgreiche Messungen
@@ -67,4 +69,11 @@ Das Compose-Setup aktiviert `--timescale-db`, daher ist auch `--csv` aktiv und
 `PGPASSWORD` erforderlich. Beim UTC-Stundenwechsel wird die komplette CSV der
 abgeschlossenen Stunde in einem Datenbankvorgang archiviert. Das Polling-Intervall
 steuert weiterhin die Modbus-Abfrage und damit die Anzahl der gespeicherten
-Messzeitpunkte pro Stunde.
+Messzeitpunkte pro Stunde. Die TimescaleDB-Retention-Policy wird beim Start
+eingerichtet und behaelt standardmaessig 356 Tage. Stelle fuer einen anderen
+Zeitraum `TIMESCALE_DB_RETENTION_DAYS` in Dockhands Stack-Umgebung ein. Bei einer
+geaenderten Einstellung wird die vorhandene Policy ersetzt. TimescaleDB loescht
+alte Daten im Hintergrund in ganzen Chunks; deshalb kann der tatsaechliche
+Datenbestand etwas laenger als die konfigurierte Zahl von Tagen reichen. Der
+DB-Benutzer muss Eigentuemer der Tabelle/Hypertable sein, damit die Policy
+verwaltet werden kann.

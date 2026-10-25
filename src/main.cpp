@@ -25,11 +25,13 @@ struct PollOptions {
     int port{502};
     int unit_id{1};
     int db_port{5444};
+    unsigned int db_retention_days{356};
     unsigned int interval_seconds{};
     bool once{};
     bool csv_enabled{};
     bool timescale_enabled{};
     bool log_file_specified{};
+    bool retention_days_specified{};
     sun2000::ConsoleOutputMode console_output{
         sun2000::ConsoleOutputMode::summary};
 };
@@ -43,7 +45,8 @@ void print_usage(std::ostream& output) {
            << "  sun2000Tool poll --host HOST --interval-seconds N [--port PORT] "
               "[--unit-id ID] [--csv [--log-file DATEI]] [--once] "
               "[--timescale-db [--db-host HOST] [--db-port PORT] "
-              "[--db-name NAME] [--db-user USER]] "
+              "[--db-name NAME] [--db-user USER] "
+              "[--db-retention-days TAGE (Standard: 356)]] "
               "[--console-output summary|all (Standard: summary)]\n"
            << "  sun2000Tool scan --cidr IPV4/PRAEFIX [--port PORT] [--workers N] "
               "[--timeout-ms N] [--max-hosts N]\n"
@@ -104,6 +107,16 @@ PollOptions parse_poll_options(int argc, char* argv[]) {
             options.db_name = take_value(index, argc, argv, argument);
         } else if (argument == "--db-user") {
             options.db_user = take_value(index, argc, argv, argument);
+        } else if (argument == "--db-retention-days") {
+            const auto retention_days = parse_number(
+                take_value(index, argc, argv, argument), argument, 36500);
+            if (retention_days == 0) {
+                throw std::invalid_argument(
+                    "--db-retention-days muss zwischen 1 und 36500 liegen.");
+            }
+            options.db_retention_days =
+                static_cast<unsigned int>(retention_days);
+            options.retention_days_specified = true;
         } else if (argument == "--csv") {
             options.csv_enabled = true;
         } else if (argument == "--once") {
@@ -148,6 +161,10 @@ PollOptions parse_poll_options(int argc, char* argv[]) {
     if (options.timescale_enabled && options.once) {
         throw std::invalid_argument(
             "--timescale-db funktioniert nur im Dauerbetrieb und nicht mit --once.");
+    }
+    if (options.retention_days_specified && !options.timescale_enabled) {
+        throw std::invalid_argument(
+            "--db-retention-days erfordert --timescale-db.");
     }
     if (options.timescale_enabled &&
         (options.db_host.empty() || options.db_port == 0 ||
@@ -205,7 +222,8 @@ int run_poll(const PollOptions& options) {
         timescale = std::make_unique<sun2000::TimescaleWriter>(
             sun2000::TimescaleConfig{options.db_host, options.db_port,
                                      options.db_name, options.db_user,
-                                     password});
+                                     password,
+                                     static_cast<int>(options.db_retention_days)});
     }
     std::unique_ptr<sun2000::CsvWriter> csv;
     if (options.csv_enabled) {

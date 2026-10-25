@@ -114,6 +114,45 @@ void rollback_after_failure(PGconn* connection) {
     std::rethrow_exception(original_error);
 }
 
+void configure_retention_policy(PGconn* connection, int retention_days) {
+    if (retention_days < 1 || retention_days > 36500) {
+        throw std::invalid_argument(
+            "TimescaleDB-Aufbewahrungsdauer muss zwischen 1 und 36500 Tagen liegen.");
+    }
+
+    execute_command(connection, "BEGIN");
+    try {
+        // Remove then add so changing the CLI value updates an existing policy.
+        execute_command(connection,
+                        "SELECT remove_retention_policy("
+                        "'sun2000_telemetry', if_exists => TRUE)");
+
+        const std::string days = std::to_string(retention_days);
+        const char* values[] = {days.c_str()};
+        PGresult* result = PQexecParams(
+            connection,
+            "SELECT add_retention_policy("
+            "'sun2000_telemetry', "
+            "drop_after => make_interval(days => $1::integer), "
+            "if_not_exists => TRUE)",
+            1, nullptr, values, nullptr, nullptr, 0);
+        if (result == nullptr) {
+            throw std::runtime_error(connection_error(connection));
+        }
+        if (PQresultStatus(result) != PGRES_TUPLES_OK) {
+            const char* message = PQresultErrorMessage(result);
+            const std::string error =
+                message == nullptr ? connection_error(connection) : message;
+            PQclear(result);
+            throw std::runtime_error(error);
+        }
+        PQclear(result);
+        execute_command(connection, "COMMIT");
+    } catch (...) {
+        rollback_after_failure(connection);
+    }
+}
+
 std::vector<std::vector<std::string>> parse_csv(const std::string& contents) {
     std::vector<std::vector<std::string>> rows;
     std::vector<std::string> row;
@@ -228,6 +267,7 @@ public:
         } catch (...) {
             rollback_after_failure(connection.get());
         }
+        configure_retention_policy(connection.get(), config.retention_days);
     }
 
     std::unique_ptr<PGconn, decltype(&PQfinish)> connection;
