@@ -12,9 +12,9 @@ enum class ConsoleOutputMode {
     all
 };
 
-// Schreibt Messwerte in UTC-Stundendateien. Der Konstruktor erwartet einen
-// Basisdateipfad (z. B. /data/sun2000.csv); write() erzeugt daraus
-// sun2000_YYYY-MM-DDTHH.csv und behaelt maximal 24 passende Stunden-Dateien.
+// Schreibt UTC-Stundendateien und unveraenderliche Poll-Snapshots. Der
+// Konstruktor erwartet einen Basisdateipfad (z. B. /data/sun2000.csv).
+// Stundendateien bleiben der Ringspeicher; Snapshots liegen separat fuer SMB-Leser.
 class CsvWriter {
 public:
     using BeforeHourOpen = std::function<void(const std::string&)>;
@@ -35,6 +35,7 @@ public:
 private:
     void open_hour(const std::string& hour_key);
     void publish_pending_rows();
+    void publish_snapshot(const std::vector<std::string>& rows);
 
     std::string base_path_;
     std::string active_hour_;

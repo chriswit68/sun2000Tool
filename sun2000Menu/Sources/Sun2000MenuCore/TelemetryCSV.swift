@@ -184,6 +184,14 @@ public enum TelemetryCSVFile {
         return baseURL.deletingLastPathComponent().appendingPathComponent(filename)
     }
 
+    public static func snapshotDirectoryURL(baseURL: URL) -> URL {
+        baseURL.deletingLastPathComponent()
+            .appendingPathComponent(
+                "\(baseURL.deletingPathExtension().lastPathComponent)_snapshots",
+                isDirectory: true
+            )
+    }
+
     public static func latestHourlyURL(baseURL: URL) throws -> URL? {
         let directory = baseURL.deletingLastPathComponent()
         let prefix = "\(baseURL.deletingPathExtension().lastPathComponent)_"
@@ -209,6 +217,38 @@ public enum TelemetryCSVFile {
         }
         guard let latest = matching.max() else { return nil }
         return directory.appendingPathComponent(latest)
+    }
+
+    public static func latestSnapshotURL(baseURL: URL) throws -> URL? {
+        let snapshotDirectory = snapshotDirectoryURL(baseURL: baseURL)
+        guard FileManager.default.fileExists(atPath: snapshotDirectory.path) else {
+            return nil
+        }
+
+        let filenames = try FileManager.default.contentsOfDirectory(
+            atPath: snapshotDirectory.path
+        )
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd'T'HH-mm-ss'Z'"
+
+        let latest = filenames
+            .filter { filename in
+                guard filename.hasSuffix(".csv") else { return false }
+                let timestamp = String(filename.prefix(20))
+                guard let parsed = formatter.date(from: timestamp) else {
+                    return false
+                }
+                guard formatter.string(from: parsed) == timestamp else {
+                    return false
+                }
+                return filename.dropFirst(20).hasPrefix("-")
+            }
+            .max()
+        guard let latest else { return nil }
+        return snapshotDirectory.appendingPathComponent(latest)
     }
 }
 

@@ -50,6 +50,39 @@ final class TelemetryCSVTests: XCTestCase {
         XCTAssertEqual(TelemetryCSVFile.baseURL(from: baseURL), baseURL)
     }
 
+    func testFindsLatestImmutablePollSnapshot() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let baseURL = directory.appendingPathComponent("sun2000.csv")
+        let snapshots = directory.appendingPathComponent(
+            "sun2000_snapshots",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: snapshots,
+            withIntermediateDirectories: true
+        )
+        let older = snapshots.appendingPathComponent(
+            "2026-10-25T07-59-00Z-100.csv"
+        )
+        let latest = snapshots.appendingPathComponent(
+            "2026-10-25T08-00-00Z-200.csv"
+        )
+        try Data("old".utf8).write(to: older)
+        try Data("new".utf8).write(to: latest)
+
+        XCTAssertEqual(
+            try TelemetryCSVFile.latestSnapshotURL(baseURL: baseURL),
+            latest
+        )
+    }
+
     func testMalformedCSVHasUsefulError() {
         XCTAssertThrowsError(
             try TelemetryCSVParser.latestSample(
@@ -216,6 +249,57 @@ final class PollingServiceTests: XCTestCase {
             XCTFail("Expected the CSV sample to be loaded.")
             return
         }
+    }
+
+    func testPollingPrefersSnapshotToMutableHourlyCSV() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let suiteName = "sun2000MenuTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suiteName)!
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let baseURL = directory.appendingPathComponent("sun2000.csv")
+        let now = Date()
+        let hourlyURL = TelemetryCSVFile.hourlyURL(baseURL: baseURL, at: now)
+        try Data(
+            """
+            timestamp_utc,signal,value,unit
+            2026-10-24T06:00:00Z,"active_power","100","W"
+            """.utf8
+        ).write(to: hourlyURL)
+
+        let snapshotDirectory =
+            TelemetryCSVFile.snapshotDirectoryURL(baseURL: baseURL)
+        try FileManager.default.createDirectory(
+            at: snapshotDirectory,
+            withIntermediateDirectories: true
+        )
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.timeZone = TimeZone(secondsFromGMT: 0)
+        formatter.dateFormat = "yyyy-MM-dd'T'HH-mm-ss'Z'"
+        let snapshotURL = snapshotDirectory.appendingPathComponent(
+            "\(formatter.string(from: now))-1.csv"
+        )
+        try Data(
+            """
+            timestamp_utc,signal,value,unit
+            2026-10-24T06:01:00Z,"active_power","520","W"
+            """.utf8
+        ).write(to: snapshotURL)
+
+        let settings = AppSettings(defaults: defaults)
+        settings.csvBasePath = baseURL.path
+        let poller = PollingService(settings: settings)
+        await poller.pollNow()
+
+        XCTAssertEqual(poller.values.first?.value, "520")
     }
 
     func testPollingReportsCorruptCSVRowsOnlyWhenNewRowsAppear() async throws {

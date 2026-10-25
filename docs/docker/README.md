@@ -54,8 +54,12 @@ Platzhalter.
 
 ## Daten und Neustart
 
-`./data:/data` ist ein Bind-Mount: CSV-Dateien ueberleben Image-Updates und
-Container-Neustarts. `restart: unless-stopped` startet den Poller nach einem
+`./data:/data` ist ein Bind-Mount: Stunden-CSV-Dateien und das Unterverzeichnis
+`data/sun2000_snapshots` ueberleben Image-Updates und Container-Neustarts.
+Snapshots werden pro Poll unter jeweils einem neuen Dateinamen atomar
+veroeffentlicht, damit `sun2000Menu` ueber SMB nicht zeitgleich dieselbe Datei
+liest, die der Container gerade aktualisiert. Snapshots aelter als 24 Stunden
+werden bereinigt. `restart: unless-stopped` startet den Poller nach einem
 NAS-/Docker-Neustart automatisch erneut, ausser der Container wurde absichtlich
 gestoppt. Der eingebaute CSV-Ringspeicher behaelt maximal 24 Stunden-Dateien.
 

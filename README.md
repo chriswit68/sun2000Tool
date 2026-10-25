@@ -94,6 +94,12 @@ oder veraendert. Die Messzeilen eines Polls werden zuerst in eine temporaere
 Datei geschrieben und danach atomar veroeffentlicht. Leser ueber ein Netzlaufwerk
 sehen damit entweder den vorherigen vollstaendigen Stand oder den neuen
 vollstaendigen Poll, aber keinen waehrend des Schreibens partiellen Datensatz:
+Zusaetzlich wird jeder vollstaendige Poll unter einem neuen, unveraenderlichen
+Dateinamen im Unterverzeichnis `sun2000_snapshots/` veroeffentlicht. Das ist fuer
+`sun2000Menu` auf einem SMB-Netzlaufwerk gedacht: Die App findet bei jedem
+Abfrageintervall den neuesten Snapshot, statt dieselbe Stunden-Datei zu lesen,
+die der Container fortlaufend ersetzt. Snapshots aelter als 24 Stunden werden
+entfernt; der bestehende Stunden-Ringspeicher bleibt unveraendert.
 
 ```bash
 ./build/sun2000Tool poll --host 192.168.1.50 --interval-seconds 10 \

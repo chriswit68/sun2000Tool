@@ -106,10 +106,30 @@ private enum PollResult: Sendable {
 
 private func executePoll(csvBaseURL: URL) -> PollResult {
     do {
-        guard let csvURL = try TelemetryCSVFile.latestHourlyURL(
+        let csvURL: URL
+        if let latestSnapshot = try TelemetryCSVFile.latestSnapshotURL(
             baseURL: csvBaseURL
-        ) else {
-            return .failure("Keine Stunden-CSV zur konfigurierten Basisdatei gefunden.")
+        ) {
+            // Snapshots have immutable names so SMB readers never open a file
+            // that sun2000Tool is replacing during the next poll.
+            csvURL = latestSnapshot
+        } else if FileManager.default.fileExists(
+            atPath: TelemetryCSVFile.snapshotDirectoryURL(baseURL: csvBaseURL)
+                .path
+        ) {
+            return .failure(
+                "Im Poll-Snapshot-Verzeichnis wurde noch kein vollstaendiger "
+                    + "Snapshot gefunden."
+            )
+        } else if let latestHourly = try TelemetryCSVFile.latestHourlyURL(
+            baseURL: csvBaseURL
+        ) {
+            csvURL = latestHourly
+        } else {
+            return .failure(
+                "Keine Poll-Snapshots oder Stunden-CSV zur konfigurierten "
+                    + "Basisdatei gefunden."
+            )
         }
         let contents = try String(contentsOf: csvURL, encoding: .utf8)
         let sample = try TelemetryCSVParser.latestSampleWithDiagnostics(

@@ -127,6 +127,95 @@ std::filesystem::path temporary_file_path(
            std::to_string(next_id.fetch_add(1, std::memory_order_relaxed));
 }
 
+std::filesystem::path snapshot_directory_path(const std::string& base_path) {
+    const std::filesystem::path base(base_path);
+    return base.parent_path() / (base.stem().string() + "_snapshots");
+}
+
+std::string snapshot_timestamp(const std::string& timestamp) {
+    std::string filename_timestamp = timestamp;
+    filename_timestamp[13] = '-';
+    filename_timestamp[16] = '-';
+    return filename_timestamp;
+}
+
+void publish_file_atomically(const std::filesystem::path& destination,
+                             const std::string& contents) {
+    const auto temporary = temporary_file_path(destination);
+    try {
+        {
+            std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
+            if (!output) {
+                throw std::runtime_error(
+                    "Temporäre CSV-Datei kann nicht angelegt werden: " +
+                    temporary.string());
+            }
+            output.write(contents.data(),
+                         static_cast<std::streamsize>(contents.size()));
+            output.flush();
+            if (!output) {
+                throw std::runtime_error(
+                    "Temporäre CSV-Datei konnte nicht vollstaendig geschrieben "
+                    "werden: " +
+                    temporary.string());
+            }
+        }
+        std::error_code error;
+        std::filesystem::rename(temporary, destination, error);
+        if (error) {
+            throw std::system_error(error, "CSV-Datei kann nicht atomar "
+                                           "veroeffentlicht werden");
+        }
+    } catch (...) {
+        std::error_code ignored;
+        std::filesystem::remove(temporary, ignored);
+        throw;
+    }
+}
+
+void remove_expired_snapshots(const std::filesystem::path& directory,
+                              std::time_t current_time) {
+    constexpr std::time_t retention_seconds = 24 * 60 * 60;
+    const std::time_t oldest_retained = current_time - retention_seconds;
+    for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+        if (!entry.is_regular_file() || entry.path().extension() != ".csv") {
+            continue;
+        }
+        const std::string filename = entry.path().filename().string();
+        if (filename.size() < 26 || filename[20] != '-') {
+            continue;
+        }
+        std::string encoded_timestamp = filename.substr(0, 20);
+        encoded_timestamp[13] = ':';
+        encoded_timestamp[16] = ':';
+        std::tm parsed{};
+        std::istringstream input(encoded_timestamp);
+        input >> std::get_time(&parsed, "%Y-%m-%dT%H:%M:%SZ");
+        if (!input || input.peek() != std::char_traits<char>::eof()) {
+            continue;
+        }
+        parsed.tm_isdst = 0;
+        const std::time_t snapshot_time = timegm(&parsed);
+        std::tm verified{};
+        if (gmtime_r(&snapshot_time, &verified) == nullptr) {
+            continue;
+        }
+        std::ostringstream formatted;
+        formatted << std::put_time(&verified, "%Y-%m-%dT%H:%M:%SZ");
+        if (formatted.str() != encoded_timestamp) {
+            continue;
+        }
+        if (snapshot_time < oldest_retained) {
+            std::error_code error;
+            std::filesystem::remove(entry.path(), error);
+            if (error) {
+                throw std::system_error(
+                    error, "Abgelaufener CSV-Snapshot kann nicht geloescht werden");
+            }
+        }
+    }
+}
+
 void remove_expired_hourly_files(const std::string& base_path,
                                  const std::string& current_hour_key) {
     const std::filesystem::path base(base_path);
@@ -387,37 +476,38 @@ void CsvWriter::publish_pending_rows() {
         contents += row;
     }
 
-    const auto temporary = temporary_file_path(destination);
-    try {
-        {
-            std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
-            if (!output) {
-                throw std::runtime_error(
-                    "Temporäre CSV-Datei kann nicht angelegt werden: " +
-                    temporary.string());
-            }
-            output.write(contents.data(),
-                         static_cast<std::streamsize>(contents.size()));
-            output.flush();
-            if (!output) {
-                throw std::runtime_error(
-                    "Temporäre CSV-Datei konnte nicht vollstaendig geschrieben "
-                    "werden: " +
-                    temporary.string());
-            }
-        }
-        std::error_code error;
-        std::filesystem::rename(temporary, destination, error);
-        if (error) {
-            throw std::system_error(error, "CSV-Datei kann nicht atomar "
-                                           "veroeffentlicht werden");
-        }
-        pending_rows_.clear();
-    } catch (...) {
-        std::error_code ignored;
-        std::filesystem::remove(temporary, ignored);
-        throw;
+    const auto rows = pending_rows_;
+    publish_file_atomically(destination, contents);
+    pending_rows_.clear();
+    publish_snapshot(rows);
+}
+
+void CsvWriter::publish_snapshot(const std::vector<std::string>& rows) {
+    if (rows.empty()) {
+        return;
     }
+    const auto directory = snapshot_directory_path(base_path_);
+    std::filesystem::create_directories(directory);
+    std::string contents = "timestamp_utc,signal,value,unit\n";
+    for (const auto& row : rows) {
+        contents += row;
+    }
+    const std::string timestamp = rows.front().substr(0, 20);
+    const std::string unique_suffix =
+        std::to_string(std::chrono::steady_clock::now()
+                           .time_since_epoch()
+                           .count());
+    const auto destination =
+        directory /
+        (snapshot_timestamp(timestamp) + "-" + unique_suffix + ".csv");
+    // SMB clients may cache an open path; a new name per poll avoids replacing
+    // the file sun2000Menu is currently reading from the network share.
+    publish_file_atomically(destination, contents);
+    std::tm parsed{};
+    std::istringstream input(timestamp);
+    input >> std::get_time(&parsed, "%Y-%m-%dT%H:%M:%SZ");
+    parsed.tm_isdst = 0;
+    remove_expired_snapshots(directory, timegm(&parsed));
 }
 
 ConsoleReporter::ConsoleReporter(std::ostream& output, ConsoleOutputMode mode,

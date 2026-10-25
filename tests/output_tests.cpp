@@ -189,8 +189,13 @@ void test_hourly_rotation_and_same_hour_append() {
            "CSV-Header wurde innerhalb derselben Stunde wiederholt.");
     expect(second_contents.find("\"30\"") != std::string::npos,
            "Neuer Stundenwert wurde nicht in eine neue Datei rotiert.");
-    expect(std::distance(std::filesystem::directory_iterator(directory),
-                         std::filesystem::directory_iterator()) == 2,
+    std::size_t hourly_files = 0;
+    for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+        if (entry.is_regular_file() && entry.path().extension() == ".csv") {
+            ++hourly_files;
+        }
+    }
+    expect(hourly_files == 2,
            "Es wurden unerwartete Stunden-Dateien angelegt.");
     std::filesystem::remove_all(directory);
 }
@@ -204,11 +209,36 @@ void test_csv_poll_is_published_atomically() {
     std::filesystem::create_directories(directory);
     const auto base = directory / "plant.csv";
     const auto csv_path = hourly_path(base, "2026-10-23T08:00:00Z");
+    const auto snapshot_directory = directory / "plant_snapshots";
+    std::filesystem::create_directories(snapshot_directory);
+    const auto expired_snapshot =
+        snapshot_directory / "2026-10-22T07-59-00Z-1.csv";
+    {
+        std::ofstream expired(expired_snapshot);
+        expired << "expired";
+    }
 
     {
         sun2000::CsvWriter csv(base.string());
         csv.write("2026-10-23T08:00:00Z", "active_power", "10", "W");
         csv.flush();
+        expect(!std::filesystem::exists(expired_snapshot),
+               "Snapshots aelter als 24 Stunden wurden nicht entfernt.");
+        expect(std::filesystem::exists(snapshot_directory),
+               "Poll-Snapshot-Verzeichnis wurde nicht angelegt.");
+        expect(std::distance(
+                   std::filesystem::directory_iterator(snapshot_directory),
+                   std::filesystem::directory_iterator()) == 1,
+               "Ein Poll muss genau einen Snapshot veroeffentlichen.");
+        const auto snapshot_path =
+            *std::filesystem::directory_iterator(snapshot_directory);
+        std::ifstream snapshot_stream(snapshot_path.path(), std::ios::binary);
+        const std::string snapshot_contents(
+            (std::istreambuf_iterator<char>(snapshot_stream)),
+            std::istreambuf_iterator<char>());
+        expect(snapshot_contents.find("\"active_power\",\"10\"") !=
+                   std::string::npos,
+               "Snapshot enthaelt nicht den vollstaendigen Poll.");
 
         std::ifstream before_second_poll(csv_path, std::ios::binary);
         const std::string published_before(
@@ -227,6 +257,11 @@ void test_csv_poll_is_published_atomically() {
                "Unvollstaendiger Poll wurde vor flush sichtbar.");
 
         csv.flush();
+        expect(std::distance(
+                   std::filesystem::directory_iterator(snapshot_directory),
+                   std::filesystem::directory_iterator()) == 2,
+               "Ein neuer Poll muss einen neuen, unveraenderlichen Snapshot "
+               "erzeugen.");
     }
 
     std::ifstream final_stream(csv_path, std::ios::binary);

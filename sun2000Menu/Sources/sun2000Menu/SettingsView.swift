@@ -14,7 +14,7 @@ struct SettingsView: View {
                         .textFieldStyle(.roundedBorder)
                     Button("Auswaehlen …", action: chooseCSV)
                 }
-                Text("Waehle die Basisdatei, z. B. sun2000.csv oder eine Stunden-Datei wie sun2000_2026-10-24T06.csv.")
+                Text("Waehle die CSV-Basisdatei, z. B. sun2000.csv. Falls sun2000Tool Poll-Snapshots bereitstellt, liest die App bevorzugt den neuesten Snapshot.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
