@@ -37,10 +37,12 @@ in das Dashboard-JSON. Das Dashboard enthaelt keine Zugangsdaten.
 - **Identifikation und Versionen:** Neueste nichtnumerische Geraete-, Firmware-
   und Statuszeitwerte.
 
-Die TimescaleDB-Archivierung schreibt beim UTC-Stundenwechsel den letzten
-Messsatz der vorherigen Stunde. Daher erscheinen neue Zeitreihenwerte erst mit
-dem naechsten Stundenwechsel, nicht bei jedem einzelnen Modbus-Poll. Das
-Dashboard startet mit einem Zeitraum von sieben Tagen und aktualisiert die
+Die TimescaleDB-Archivierung schreibt beim UTC-Stundenwechsel den vollstaendigen
+Inhalt der abgeschlossenen Stunden-CSV in einem Datenbankvorgang. Bei einem
+60-Sekunden-Polling sind das typischerweise etwa 60 Messpunkte je Signal und
+Stunde. Die Daten werden an ihren urspruenglichen CSV-Messzeitpunkten
+visualisiert; sie erscheinen in Grafana, sobald die Stunde archiviert wurde.
+Das Dashboard startet mit einem Zeitraum von sieben Tagen und aktualisiert die
 Ansicht alle fuenf Minuten. Bei Abweichungen kann der Zeitraum oben rechts
 angepasst werden.
 

@@ -30,9 +30,9 @@ public:
     TimescaleWriter(const TimescaleWriter&) = delete;
     TimescaleWriter& operator=(const TimescaleWriter&) = delete;
 
-    std::size_t store_latest_sample(const std::string& csv_path);
+    std::size_t store_csv_file(const std::string& csv_path);
 
-    static std::vector<TelemetryRecord> read_latest_sample(
+    static std::vector<TelemetryRecord> read_csv_records(
         const std::string& csv_path);
 
 private:

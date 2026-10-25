@@ -47,7 +47,7 @@ struct SettingsView: View {
                 }
             } else {
                 Section("Direkt in der Menueleiste") {
-                    Text("Die Menueleiste hat begrenzten Platz. Nicht ausgewaehlte Werte erscheinen im linken Pulldown-Menue.")
+                    Text("Die Breite passt sich den ausgewaehlten Werten an. Wenn in der Menueleiste insgesamt zu wenig Platz ist, waehle weniger Werte aus; nicht ausgewaehlte Werte erscheinen im linken Pulldown-Menue.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }

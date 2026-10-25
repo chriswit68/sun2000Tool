@@ -110,20 +110,22 @@ entfernt; der bestehende Stunden-Ringspeicher bleibt unveraendert.
 
 Optional kann `--timescale-db` zusammen mit `--csv` aktiviert werden. Beim
 Wechsel in eine neue UTC-Stunde speichert das Programm vor dem Anlegen der neuen
-CSV-Datei den letzten vollstaendigen Messsatz der vorherigen Stunden-Datei in
-TimescaleDB. Beim Start eines Dauerlaufs wird ebenfalls die vorhandene Datei der
-unmittelbar vorherigen Stunde archiviert. `--once` schreibt nicht in die
-Datenbank; `--timescale-db` kann deshalb nicht zusammen mit `--once` verwendet
-werden.
+CSV-Datei den vollstaendigen Inhalt der vorherigen Stunden-Datei in einem
+Datenbankvorgang in TimescaleDB. Damit werden bei einem 60-Sekunden-Polling
+typischerweise etwa 60 Messsaetze je Signal und Stunde archiviert, obwohl der
+Datenbankzugriff nur einmal pro Stunde erfolgt. Beim Start eines Dauerlaufs wird
+ebenfalls die vorhandene Datei der unmittelbar vorherigen Stunde archiviert.
+`--once` schreibt nicht in die Datenbank; `--timescale-db` kann deshalb nicht
+zusammen mit `--once` verwendet werden.
 
 Die Tabelle `sun2000_telemetry` und die Timescale-Hypertable werden bei der
 Verbindung automatisch angelegt. Jede Zeile enthaelt Zeitstempel, Signalname,
 Wert als Originaltext, fuer numerische Werte zusaetzlich `numeric_value`
 (double precision), sowie Einheit. So bleiben Textsignale erhalten und
-Messwerte koennen ohne Cast direkt numerisch ausgewertet werden. Der letzte
-Messsatz wird transaktional gespeichert;
-Wiederholungen werden ueber `(timestamp, signal)` idempotent aktualisiert. Die
-genaue Messwertdarstellung bleibt so auch fuer Textsignale erhalten.
+Messwerte koennen ohne Cast direkt numerisch ausgewertet werden. Die komplette
+Stundendatei wird transaktional gespeichert; Wiederholungen werden ueber
+`(timestamp, signal)` idempotent aktualisiert. Die genaue Messwertdarstellung
+bleibt so auch fuer Textsignale erhalten.
 
 Standardverbindung: Host `wittis-ds423-01`, Port `5444`, Datenbank `pv_user_db`,
 Benutzer `pv_user`. Abweichungen koennen mit `--db-host`, `--db-port`,

@@ -9,7 +9,6 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
-#include <unordered_map>
 #include <utility>
 
 #include <libpq-fe.h>
@@ -239,7 +238,7 @@ TimescaleWriter::TimescaleWriter(const TimescaleConfig& config)
 
 TimescaleWriter::~TimescaleWriter() = default;
 
-std::vector<TelemetryRecord> TimescaleWriter::read_latest_sample(
+std::vector<TelemetryRecord> TimescaleWriter::read_csv_records(
     const std::string& csv_path) {
     std::ifstream input(csv_path, std::ios::binary);
     if (!input) {
@@ -255,8 +254,8 @@ std::vector<TelemetryRecord> TimescaleWriter::read_latest_sample(
         throw std::runtime_error("CSV-Stundendatei hat einen ungueltigen Header.");
     }
 
-    std::string latest_timestamp;
-    std::unordered_map<std::string, TelemetryRecord> latest_by_signal;
+    std::vector<TelemetryRecord> records;
+    records.reserve(rows.size() - 1);
     for (std::size_t index = 1; index < rows.size(); ++index) {
         const auto& fields = rows[index];
         if (fields.size() == 1 && fields[0].empty()) {
@@ -267,29 +266,16 @@ std::vector<TelemetryRecord> TimescaleWriter::read_latest_sample(
                                      std::to_string(index + 1) +
                                      " hat nicht vier Spalten.");
         }
-        if (fields[0] > latest_timestamp) {
-            latest_timestamp = fields[0];
-            latest_by_signal.clear();
-        }
-        if (fields[0] == latest_timestamp) {
-            latest_by_signal[fields[1]] =
-                {fields[0], fields[1], fields[2], fields[3]};
-        }
-    }
-
-    std::vector<TelemetryRecord> records;
-    records.reserve(latest_by_signal.size());
-    for (auto& entry : latest_by_signal) {
-        records.push_back(std::move(entry.second));
+        records.push_back({fields[0], fields[1], fields[2], fields[3]});
     }
     return records;
 }
 
-std::size_t TimescaleWriter::store_latest_sample(const std::string& csv_path) {
-    const auto records = read_latest_sample(csv_path);
+std::size_t TimescaleWriter::store_csv_file(const std::string& csv_path) {
+    const auto records = read_csv_records(csv_path);
     if (records.empty()) {
         throw std::runtime_error(
-            "CSV-Stundendatei enthaelt keinen vollstaendigen Messsatz.");
+            "CSV-Stundendatei enthaelt keine Messdatensaetze.");
     }
 
     PGconn* connection = implementation_->connection.get();

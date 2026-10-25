@@ -206,10 +206,7 @@ final class MenuBarAppDelegate: NSObject, NSApplicationDelegate {
             return "\(TelemetrySignalCatalog.shortLabel(for: signal)) \(displayValue)\(unit)"
         }
         let title = parts.isEmpty ? "" : " " + parts.joined(separator: "  ·  ")
-        let maximumLength = 42
-        button.title = title.count > maximumLength
-            ? String(title.prefix(maximumLength - 1)) + "…"
-            : title
+        button.title = title
         button.toolTip = poller.statusDescription
     }
 }

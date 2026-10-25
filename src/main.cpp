@@ -213,9 +213,9 @@ int run_poll(const PollOptions& options) {
             csv = std::make_unique<sun2000::CsvWriter>(
                 options.log_file, [&timescale](const std::string& previous_csv) {
                     const auto count =
-                        timescale->store_latest_sample(previous_csv);
+                        timescale->store_csv_file(previous_csv);
                     std::cerr << "TimescaleDB: " << count
-                              << " Werte aus " << previous_csv
+                              << " Messwerte aus " << previous_csv
                               << " gespeichert.\n";
                 });
         } else {

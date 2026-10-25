@@ -64,5 +64,7 @@ NAS-/Docker-Neustart automatisch erneut, ausser der Container wurde absichtlich
 gestoppt. Der eingebaute CSV-Ringspeicher behaelt maximal 24 Stunden-Dateien.
 
 Das Compose-Setup aktiviert `--timescale-db`, daher ist auch `--csv` aktiv und
-`PGPASSWORD` erforderlich. Die Datenbankarchivierung erfolgt weiterhin nur
-beim UTC-Stundenwechsel; das Polling-Intervall steuert die Modbus-Abfrage.
+`PGPASSWORD` erforderlich. Beim UTC-Stundenwechsel wird die komplette CSV der
+abgeschlossenen Stunde in einem Datenbankvorgang archiviert. Das Polling-Intervall
+steuert weiterhin die Modbus-Abfrage und damit die Anzahl der gespeicherten
+Messzeitpunkte pro Stunde.

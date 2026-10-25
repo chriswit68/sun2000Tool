@@ -13,7 +13,7 @@ void expect(bool condition, const std::string& message) {
     }
 }
 
-void test_latest_csv_sample() {
+void test_reads_complete_csv_hour() {
     const auto directory = std::filesystem::temp_directory_path() /
                            ("sun2000-timescale-test-" +
                             std::to_string(static_cast<unsigned long long>(
@@ -33,23 +33,24 @@ void test_latest_csv_sample() {
             << "2026-10-24T05:59:30Z,\"active_power\",\"520.000000\",\"W\"\n";
     }
 
-    const auto sample = sun2000::TimescaleWriter::read_latest_sample(
+    const auto records = sun2000::TimescaleWriter::read_csv_records(
         csv_path.string());
-    expect(sample.size() == 2,
-           "Nur Signale des neuesten CSV-Zeitstempels werden gespeichert.");
-    bool found_power = false;
-    bool found_model = false;
-    for (const auto& record : sample) {
-        expect(record.timestamp == "2026-10-24T05:59:30Z",
-               "Messwert hat nicht den neuesten CSV-Zeitstempel.");
-        if (record.signal == "active_power") {
-            found_power = record.value == "520.000000" && record.unit == "W";
-        } else if (record.signal == "model_name") {
-            found_model = record.value == "SUN2000, \"Hybrid\" inverter";
-        }
-    }
-    expect(found_power, "Letzter gleichzeitiger Leistungswert fehlt.");
-    expect(found_model, "CSV-Quotes oder Kommas wurden nicht korrekt gelesen.");
+    expect(records.size() == 5,
+           "Alle Messwerte aus der CSV-Stunde muessen erhalten bleiben.");
+    expect(records[0].timestamp == "2026-10-24T05:59:00Z" &&
+               records[0].value == "400.000000",
+           "Erster Messsatz der CSV-Stunde fehlt.");
+    expect(records[1].timestamp == "2026-10-24T05:59:00Z" &&
+               records[1].signal == "model_name" &&
+               records[1].value == "old",
+           "Frueher Textmesswert wurde ausgelassen.");
+    expect(records[2].timestamp == "2026-10-24T05:59:30Z" &&
+               records[2].value == "500.000000",
+           "Frueher Pollwert innerhalb der Stunde wurde ausgelassen.");
+    expect(records[3].value == "SUN2000, \"Hybrid\" inverter",
+           "CSV-Quotes oder Kommas wurden nicht korrekt gelesen.");
+    expect(records[4].value == "520.000000",
+           "Letzter Pollwert innerhalb der Stunde fehlt.");
     std::filesystem::remove_all(directory);
 }
 
@@ -68,7 +69,7 @@ void test_rejects_bad_csv_header() {
     bool rejected = false;
     try {
         static_cast<void>(
-            sun2000::TimescaleWriter::read_latest_sample(csv_path.string()));
+            sun2000::TimescaleWriter::read_csv_records(csv_path.string()));
     } catch (const std::runtime_error&) {
         rejected = true;
     }
@@ -79,6 +80,6 @@ void test_rejects_bad_csv_header() {
 }  // namespace
 
 int main() {
-    test_latest_csv_sample();
+    test_reads_complete_csv_hour();
     test_rejects_bad_csv_header();
 }
